@@ -1,0 +1,962 @@
+"""Provider activation, configuration safety and grounded AI behavior."""
+
+import json
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import select
+
+from app import config
+from app.models import Document, DocumentChunk
+from app.services import intelligence as ai
+from app.services import providers
+from test_intelligence import intelligence_db
+
+
+@pytest.fixture
+def clean_provider_env(monkeypatch):
+    for name in [
+        "AEGIS_AI_MODE",
+        "AEGIS_AI_PROVIDER",
+        "AEGIS_KYC_VISION",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_MODEL",
+        "AEGIS_OPENAI_API_KEY",
+        "AEGIS_OPENAI_MODEL",
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+    ]:
+        monkeypatch.delenv(name, raising=False)
+    providers._model_cache.clear()
+    providers._openai_model_cache.clear()
+    yield
+    providers._model_cache.clear()
+    providers._openai_model_cache.clear()
+
+
+def test_dotenv_loads_only_supported_settings_and_injected_values_win(tmp_path):
+    path = tmp_path / ".env"
+    path.write_text("""# local settings
+export ANTHROPIC_API_KEY="synthetic-local-key" # never displayed
+ANTHROPIC_MODEL='claude-sonnet-test'
+AEGIS_AI_MODE=auto # comment
+AEGIS_SECRET='literal-$HOME-$(ignored)'
+DATABASE_URL=sqlite:///local.db
+PATH=/hostile/bin
+PYTHONPATH=/hostile
+HTTPS_PROXY=http://untrusted
+AEGIS_UNSUPPORTED=unexpected
+""")
+    environment = {"ANTHROPIC_API_KEY": "injected-key"}
+    loaded = config.load_project_env(path, environment)
+    assert environment["ANTHROPIC_API_KEY"] == "injected-key"
+    assert environment["AEGIS_AI_MODE"] == "auto"
+    assert environment["ANTHROPIC_MODEL"] == "claude-sonnet-test"
+    assert environment["AEGIS_SECRET"] == "literal-$HOME-$(ignored)"
+    assert (
+        not {"PATH", "PYTHONPATH", "HTTPS_PROXY", "AEGIS_UNSUPPORTED"}
+        & environment.keys()
+    )
+    assert "ANTHROPIC_API_KEY" not in loaded
+    assert loaded <= config.DOTENV_VARIABLES
+
+
+def test_dotenv_invalid_quoting_does_not_expose_secret(tmp_path):
+    path = tmp_path / ".env"
+    secret = "synthetic-sensitive-value"
+    path.write_text(f'ANTHROPIC_API_KEY="{secret}\n')
+    with pytest.raises(RuntimeError) as error:
+        config.load_project_env(path, {})
+    assert "line 1" in str(error.value)
+    assert secret not in str(error.value)
+
+
+def test_auto_modes_activate_with_key_and_explicit_local_wins(
+    clean_provider_env, monkeypatch
+):
+    assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "local"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "claude"
+    monkeypatch.setenv("AEGIS_AI_MODE", "local")
+    assert config.resolve_ai_mode() == "local"
+    assert config.resolve_kyc_mode() == "claude"
+    monkeypatch.setenv("AEGIS_KYC_VISION", "local")
+    assert config.resolve_kyc_mode() == "local"
+    monkeypatch.setenv("AEGIS_AI_MODE", "unsupported")
+    with pytest.raises(RuntimeError, match="auto, local, claude or openai"):
+        config.resolve_ai_mode()
+
+
+def test_model_discovery_paginates_selects_latest_and_cache_is_key_scoped(
+    clean_provider_env, monkeypatch
+):
+    requests = []
+    pages = [
+        {
+            "data": [
+                {"id": "claude-haiku-test", "created_at": "2027-01-01T00:00:00Z"},
+                {"id": "claude-sonnet-old", "created_at": "2025-01-01T00:00:00Z"},
+            ],
+            "has_more": True,
+            "last_id": "claude-sonnet-old",
+        },
+        {
+            "data": [{"id": "claude-sonnet-new", "created_at": "2026-01-01T00:00:00Z"}],
+            "has_more": False,
+        },
+        {
+            "data": [
+                {"id": "claude-sonnet-other", "created_at": "2026-02-01T00:00:00Z"}
+            ],
+            "has_more": False,
+        },
+    ]
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert providers.resolve_claude_model("synthetic-key-one") == "claude-sonnet-new"
+    assert requests[1].url.params["after_id"] == "claude-sonnet-old"
+    assert providers.resolve_claude_model("synthetic-key-one") == "claude-sonnet-new"
+    assert len(requests) == 2
+    assert providers.resolve_claude_model("synthetic-key-two") == "claude-sonnet-other"
+    assert len(requests) == 3
+    assert "synthetic-key" not in str(providers._model_cache)
+
+
+def test_explicit_model_avoids_discovery_and_probe_checks_model_access(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-test")
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.method == "GET"
+        return httpx.Response(200, json={"id": "claude-sonnet-test"})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert providers.resolve_claude_model() == "claude-sonnet-test"
+    assert requests == []
+    result = providers.check_claude()
+    assert result["status"] == "ok"
+    assert result["scope"] == "model_access"
+    assert requests[0].url.path == "/v1/models/claude-sonnet-test"
+    assert "synthetic-test-key" not in str(result)
+    assert "paid inference" in result["message"]
+
+
+@pytest.mark.parametrize("status", [401, 403, 404, 429, 500])
+def test_provider_failure_is_explicit_and_diagnostics_never_echo_remote_secrets(
+    clean_provider_env, monkeypatch, status
+):
+    secret = "synthetic-provider-sensitive-key"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(status, json={"error": f"echoed {secret}"})
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        providers.resolve_claude_model()
+    assert error.value.status_code == 503
+    assert secret not in str(error.value.detail)
+    probe = providers.check_claude()
+    assert probe["status"] == "error"
+    assert secret not in str(probe)
+    assert not providers._model_cache
+
+
+def test_model_discovery_cache_expires_and_no_sonnet_does_not_fallback(
+    clean_provider_env, monkeypatch
+):
+    clock = [100.0]
+    calls = []
+    monkeypatch.setattr(providers.time, "monotonic", lambda: clock[0])
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(
+            200, json={"data": [{"id": "claude-sonnet-test"}], "has_more": False}
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    providers.resolve_claude_model("synthetic-key")
+    clock[0] += providers.MODEL_CACHE_SECONDS + 1
+    providers.resolve_claude_model("synthetic-key")
+    assert len(calls) == 2
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, json={"data": [{"id": "claude-haiku-test"}]}
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException, match="accessible Claude Sonnet"):
+        providers.resolve_claude_model("different-synthetic-key")
+
+
+def test_status_honestly_distinguishes_implemented_claude_from_mock_adapters(
+    clean_provider_env, monkeypatch
+):
+    result = providers.integration_status()
+    assert result["ai_mode"] == result["kyc_mode"] == "local"
+    assert providers.check_claude()["status"] == "unconfigured"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-sensitive-key")
+    result = providers.integration_status()
+    by_id = {provider["id"]: provider for provider in result["providers"]}
+    assert by_id["claude"]["status"] == "configured"
+    assert by_id["claude"]["credential_configured"] is True
+    assert by_id["claude_vision"]["integrated"] is True
+    assert "biometric" in by_id["claude_vision"]["limitations"]
+    for identifier in [
+        "core_banking",
+        "identity",
+        "sanctions",
+        "credit_bureau",
+        "geoip",
+        "mfa",
+    ]:
+        assert by_id[identifier]["status"] == "not_integrated"
+        assert by_id[identifier]["mode"] == "mock_adapter"
+        assert by_id[identifier]["integrated"] is False
+        assert by_id[identifier]["requirements"]
+    assert "synthetic-sensitive-key" not in json.dumps(result)
+    monkeypatch.setenv("AEGIS_AI_MODE", "local")
+    explicit = providers.integration_status()["providers"][0]
+    assert explicit["status"] == "local"
+    assert explicit["credential_configured"] is True
+
+
+def test_claude_document_answer_sends_scoped_redacted_excerpts_and_preserves_exact_citations(
+    intelligence_db, monkeypatch
+):
+    db, user, _, _, public, private = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_MODE", "auto")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-test")
+    chunk = db.scalar(
+        select(DocumentChunk).where(DocumentChunk.document_id == public.id)
+    )
+    chunk.text += (
+        " Contact Synthetic Customer at synthetic@example.test; ID 123456789012."
+    )
+    db.flush()
+    requests = []
+
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "submit_document_answer",
+                        "input": {
+                            "answer": "The annual interest rate is 10.75% [1].",
+                            "citation_numbers": [1],
+                        },
+                    }
+                ]
+            },
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.query_documents(
+        db,
+        user,
+        "Synthetic Customer, synthetic@example.test: what is the personal loan interest rate?",
+    )
+    assert result["ai_mode"] == "claude"
+    assert "10.75%" in result["answer"]
+    assert result["citations"][0]["document_id"] == public.id
+    assert result["citations"][0]["excerpt"] in chunk.text
+    sent = json.dumps(requests)
+    assert "OBSIDIAN" not in sent
+    assert str(private.id) not in sent
+    assert "synthetic@example.test" not in sent
+    assert "123456789012" not in sent
+    assert "Synthetic Customer" not in sent
+    assert requests[0]["tool_choice"]["name"] == "submit_document_answer"
+
+
+@pytest.mark.parametrize(
+    "answer,numbers",
+    [("Invented source [42].", [1]), ("No source.", [42]), ("Bad values.", [True])],
+)
+def test_claude_document_answers_reject_invented_citations(
+    intelligence_db, monkeypatch, answer, numbers
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_MODE", "claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-test")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "submit_document_answer",
+                                "input": {
+                                    "answer": answer,
+                                    "citation_numbers": numbers,
+                                },
+                            }
+                        ]
+                    },
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        ai.query_documents(db, user, "personal loan interest rate")
+    assert error.value.status_code == 503
+
+
+def test_empty_retrieval_does_not_call_claude_or_invent_an_answer(
+    intelligence_db, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_MODE", "claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: pytest.fail("No external call is needed for empty retrieval"),
+    )
+    result = ai.query_documents(db, user, "OBSIDIAN")
+    assert result["citations"] == []
+    assert "could not find" in result["answer"]
+
+
+def test_key_only_auto_chat_discovers_model_then_uses_authorized_tool(
+    intelligence_db, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_MODE", "auto")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    providers._model_cache.clear()
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "claude-sonnet-accessible",
+                            "created_at": "2026-01-01T00:00:00Z",
+                        }
+                    ]
+                },
+            )
+        if len(calls) == 2:
+            content = [
+                {"type": "tool_use", "id": "read-1", "name": "get_balance", "input": {}}
+            ]
+        else:
+            content = [
+                {"type": "text", "text": "Your current balance is INR 20000.00."}
+            ]
+        return httpx.Response(200, json={"content": content})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.chat(db, user, "Show my balance")
+    assert result["ai_mode"] == "claude"
+    assert result["tools"][0]["name"] == "get_balance"
+    assert json.loads(calls[1].content)["model"] == "claude-sonnet-accessible"
+    assert len(calls) == 3
+    providers._model_cache.clear()
+
+
+def test_auto_vision_with_key_discovers_model_without_claiming_biometrics(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        if request.method == "GET":
+            return httpx.Response(
+                200, json={"data": [{"id": "claude-sonnet-accessible"}]}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "submit_evidence_assessment",
+                        "input": {
+                            "document_readable": True,
+                            "document_portrait_present": True,
+                            "selfie_person_present": True,
+                            "printed_full_name": "Synthetic Customer",
+                            "confidence": 0.95,
+                        },
+                    }
+                ]
+            },
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    png = b"\x89PNG\r\n\x1a\nsynthetic"
+    result = ai.assess_kyc_evidence(
+        "Synthetic Customer", "id.png", png, "selfie.png", png
+    )
+    assert result["mode"] == "claude"
+    assert result["performed"] is True
+    assert "biometric matching remain unverified" in result["reasons"][0]
+    assert json.loads(calls[1].content)["model"] == "claude-sonnet-accessible"
+    assert len(calls) == 2
+
+
+def _openai_message(text: str, *, status: str = "completed") -> dict:
+    return {
+        "status": status,
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": text}],
+            }
+        ],
+    }
+
+
+def test_openai_key_alias_auto_priority_and_explicit_provider_selection(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-alias-key")
+    assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "openai"
+    assert providers.openai_key() == "synthetic-alias-key"
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-primary-key")
+    assert providers.openai_key() == "synthetic-primary-key"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-claude-key")
+    assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "claude"
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openai")
+    assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "openai"
+    monkeypatch.setenv("AEGIS_KYC_VISION", "claude")
+    assert config.resolve_kyc_mode() == "claude"
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "local")
+    assert config.resolve_ai_mode() == "local"
+    monkeypatch.setenv("AEGIS_KYC_VISION", "auto")
+    assert config.resolve_kyc_mode() == "local"
+
+
+def test_openai_model_discovery_selects_capable_latest_family_and_caches_by_key(
+    clean_provider_env, monkeypatch
+):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert request.url.host == "api.openai.com"
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "gpt-4.1", "created": 100},
+                    {"id": "gpt-5", "created": 200},
+                    {"id": "gpt-5.2-mini", "created": 300},
+                    {"id": "gpt-5.2", "created": 250},
+                    {"id": "gpt-5.2-chat-latest", "created": 999},
+                    {"id": "gpt-5.2-codex", "created": 999},
+                    {"id": "gpt-image-1", "created": 999},
+                    {"id": "whisper-1", "created": 999},
+                ]
+            },
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert providers.resolve_openai_model("synthetic-key-one") == "gpt-5.2"
+    assert providers.resolve_openai_model("synthetic-key-one") == "gpt-5.2"
+    assert len(calls) == 1
+    assert providers.resolve_openai_model("synthetic-key-two") == "gpt-5.2"
+    assert len(calls) == 2
+    assert "synthetic-key" not in str(providers._openai_model_cache)
+
+
+def test_openai_probe_checks_explicit_model_access_without_inference(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.setenv("AEGIS_OPENAI_MODEL", "gpt-4.1")
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert request.method == "GET"
+        return httpx.Response(200, json={"id": "gpt-4.1"})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert providers.resolve_openai_model() == "gpt-4.1"
+    assert calls == []
+    result = providers.check_openai()
+    assert result["status"] == "ok"
+    assert result["scope"] == "model_access"
+    assert calls[0].url.path == "/v1/models/gpt-4.1"
+    assert "synthetic-openai-key" not in str(result)
+    assert providers.integration_status()["ai_mode"] == "openai"
+    by_id = {
+        provider["id"]: provider
+        for provider in providers.integration_status()["providers"]
+    }
+    assert by_id["openai"]["status"] == by_id["openai_vision"]["status"] == "configured"
+    assert by_id["claude"]["status"] == "local"
+
+
+def test_openai_diagnostic_failure_never_echoes_secret_or_falls_back(
+    clean_provider_env, monkeypatch
+):
+    secret = "synthetic-sensitive-openai-key"
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", secret)
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(401, json={"error": secret})
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        providers.resolve_openai_model()
+    assert error.value.status_code == 503
+    assert secret not in str(error.value.detail)
+    assert providers.check_openai()["status"] == "error"
+    assert secret not in str(providers.check_openai())
+    assert not providers._openai_model_cache
+
+
+def test_key_only_openai_auto_tool_loop_uses_redacted_scoped_context(
+    intelligence_db, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "auto")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.delenv("AEGIS_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    providers._openai_model_cache.clear()
+    calls, payloads = [], []
+
+    def handle(request):
+        calls.append(request)
+        if request.method == "GET":
+            return httpx.Response(
+                200, json={"data": [{"id": "gpt-5.2", "created": 100}]}
+            )
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        assert request.url.path == "/v1/responses"
+        assert payload["store"] is False
+        assert payload["model"] == "gpt-5.2"
+        if len(payloads) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "reasoning",
+                            "id": "r-1",
+                            "summary": [],
+                            "encrypted_content": "opaque-continuation",
+                        },
+                        {
+                            "type": "function_call",
+                            "id": "fc-1",
+                            "call_id": "read-1",
+                            "name": "get_balance",
+                            "arguments": "{}",
+                        },
+                    ],
+                },
+            )
+        return httpx.Response(
+            200, json=_openai_message("Your balance is INR 20000.00.")
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.chat(
+        db,
+        user,
+        "Synthetic Customer: synthetic@example.test, ID 123456789012, show my balance.",
+    )
+    assert result["ai_mode"] == "openai"
+    assert result["tools"][0]["name"] == "get_balance"
+    assert len(calls) == 3
+    sent = json.dumps(payloads)
+    assert "synthetic@example.test" not in sent
+    assert "123456789012" not in sent
+    assert "Synthetic Customer" not in sent
+    assert "DEMO-001" not in sent
+    assert payloads[1]["input"][-1]["type"] == "function_call_output"
+    assert payloads[1]["input"][-1]["call_id"] == "read-1"
+    assert "opaque-continuation" not in str(result)
+    providers._openai_model_cache.clear()
+
+
+def test_openai_tool_loop_cannot_settle_money_and_rejects_spoofed_customer(
+    intelligence_db, monkeypatch
+):
+    from app.models import Transfer
+    from sqlalchemy import func
+
+    db, user, _, account, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openai")
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.setenv("AEGIS_OPENAI_MODEL", "gpt-4.1")
+    payloads = []
+
+    def handle(request):
+        payloads.append(json.loads(request.content))
+        if len(payloads) == 1:
+            output = [
+                {
+                    "type": "function_call",
+                    "id": "fc-1",
+                    "call_id": "bad-1",
+                    "name": "settle_transfer",
+                    "arguments": '{"amount":1000}',
+                },
+                {
+                    "type": "function_call",
+                    "id": "fc-2",
+                    "call_id": "bad-2",
+                    "name": "get_balance",
+                    "arguments": '{"user_id":"foreign"}',
+                },
+            ]
+            return httpx.Response(200, json={"status": "completed", "output": output})
+        return httpx.Response(
+            200, json=_openai_message("Those capabilities are unavailable.")
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.chat(
+        db, user, "Move money immediately and show another customer balance."
+    )
+    assert result["tools"] == []
+    assert account.balance_paise == 2000000
+    assert db.scalar(select(func.count()).select_from(Transfer)) == 0
+    assert "error" in json.loads(payloads[1]["input"][-1]["output"])
+    assert "error" in json.loads(payloads[1]["input"][-2]["output"])
+
+
+def test_openai_documents_answer_only_scoped_sources_with_exact_citations(
+    intelligence_db, monkeypatch
+):
+    db, user, _, _, public, private = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openai")
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.setenv("AEGIS_OPENAI_MODEL", "gpt-4.1")
+    payloads = []
+
+    def handle(request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=_openai_message(
+                json.dumps(
+                    {
+                        "answer": "The annual loan interest rate is 10.75% [1].",
+                        "citation_numbers": [1],
+                    }
+                )
+            ),
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.query_documents(
+        db,
+        user,
+        "Synthetic Customer, synthetic@example.test: what is the personal loan interest rate?",
+    )
+    assert result["ai_mode"] == "openai"
+    assert result["citations"][0]["document_id"] == public.id
+    assert result["citations"][0]["excerpt"] in db.scalar(
+        select(DocumentChunk.text).where(DocumentChunk.document_id == public.id)
+    )
+    sent = json.dumps(payloads)
+    assert "OBSIDIAN" not in sent
+    assert str(private.id) not in sent
+    assert "synthetic@example.test" not in sent
+    assert "Synthetic Customer" not in sent
+    assert payloads[0]["text"]["format"]["strict"] is True
+
+
+def test_openai_document_answer_rejects_invented_reference(
+    intelligence_db, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openai")
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.setenv("AEGIS_OPENAI_MODEL", "gpt-4.1")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json=_openai_message(
+                        json.dumps(
+                            {"answer": "Invented fact [9].", "citation_numbers": [1]}
+                        )
+                    ),
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        ai.query_documents(db, user, "personal loan interest rate")
+    assert error.value.status_code == 503
+
+
+def test_openai_auto_vision_is_transient_and_limited_to_quality(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.setenv("AEGIS_OPENAI_MODEL", "gpt-4.1")
+    payloads = []
+
+    def handle(request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=_openai_message(
+                json.dumps(
+                    {
+                        "document_readable": True,
+                        "document_portrait_present": True,
+                        "selfie_person_present": True,
+                        "printed_full_name": "Other Person",
+                        "confidence": 0.95,
+                    }
+                )
+            ),
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    png = b"\x89PNG\r\n\x1a\nsynthetic"
+    result = ai.assess_kyc_evidence(
+        "Synthetic Customer", "id.pdf", b"%PDF-synthetic", "selfie.png", png
+    )
+    assert result["mode"] == "openai"
+    assert result["requires_review"] is True
+    assert result["risk_score"] == 40
+    assert "biometric matching remain unverified" in result["reasons"][0]
+    assert "Other Person" not in str(result)
+    assert "printed_full_name" not in result
+    assert "Synthetic Customer" not in str(payloads)
+    content = payloads[0]["input"][0]["content"]
+    assert content[1]["type"] == "input_file"
+    assert content[3]["type"] == "input_image"
+    assert payloads[0]["store"] is False
+
+
+def test_openai_missing_credentials_and_incomplete_response_fail_clearly(
+    intelligence_db, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openai")
+    monkeypatch.delenv("AEGIS_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(HTTPException) as error:
+        ai.chat(db, user, "Show my balance")
+    assert error.value.status_code == 503
+    monkeypatch.setenv("AEGIS_OPENAI_API_KEY", "synthetic-openai-key")
+    monkeypatch.setenv("AEGIS_OPENAI_MODEL", "gpt-4.1")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, json=_openai_message("Partial answer.", status="incomplete")
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        ai.chat(db, user, "Show my balance")
+    assert error.value.status_code == 503
+    assert "did not complete" in error.value.detail
+
+
+def test_recommendations_spending_and_budgets_use_full_posted_ledger_beyond_2000(
+    intelligence_db,
+):
+    from datetime import datetime, timedelta, timezone
+    from app.models import LedgerEntry
+
+    db, user, _, account, *_ = intelligence_db
+    now = datetime.now(timezone.utc)
+    db.bulk_save_objects(
+        [
+            LedgerEntry(
+                account_id=account.id,
+                direction=direction,
+                amount_paise=amount,
+                description="Synthetic aggregate regression",
+                category="Shopping",
+                status="posted",
+                balance_after_paise=account.balance_paise,
+                created_at=now,
+            )
+            for direction, amount in [("credit", 100), ("debit", 1)]
+            for _ in range(3000)
+        ]
+    )
+    db.add(
+        LedgerEntry(
+            account_id=account.id,
+            direction="credit",
+            amount_paise=999999,
+            description="Excluded pending",
+            category="Shopping",
+            status="pending",
+            balance_after_paise=account.balance_paise,
+            created_at=now,
+        )
+    )
+    db.add(
+        LedgerEntry(
+            account_id=account.id,
+            direction="credit",
+            amount_paise=999999,
+            description="Excluded old",
+            category="Shopping",
+            status="posted",
+            balance_after_paise=account.balance_paise,
+            created_at=now - timedelta(days=31),
+        )
+    )
+    db.flush()
+    context = ai.ToolContext(db, user, "aggregate-test", ai.CUSTOMER_SCOPES)
+    spending = ai.REGISTRY.invoke("get_spending", context, {})
+    assert spending["income"] == "83000.00"
+    assert spending["expenses"] == "20030.00"
+    budget = ai.REGISTRY.invoke("get_budgets", context, {})["budgets"][0]
+    assert budget["spent"] == "20030.00"
+    profile = ai.recommendations(db, user)["profile"]
+    assert profile["monthly_income"] == "83000.00"
+    assert profile["monthly_expenses"] == "20030.00"
+
+
+def test_budget_spending_combines_case_variants_without_losing_amounts(intelligence_db):
+    from app.models import LedgerEntry
+
+    db, user, _, account, *_ = intelligence_db
+    db.add(
+        LedgerEntry(
+            account_id=account.id,
+            direction="debit",
+            amount_paise=1000,
+            description="Synthetic category variant",
+            category="shopping",
+            status="posted",
+            balance_after_paise=account.balance_paise,
+        )
+    )
+    db.flush()
+    context = ai.ToolContext(db, user, "case-aggregate-test", ai.CUSTOMER_SCOPES)
+    budget = ai.REGISTRY.invoke("get_budgets", context, {})["budgets"][0]
+    assert budget["spent"] == "20010.00"

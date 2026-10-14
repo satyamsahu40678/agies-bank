@@ -1,0 +1,17 @@
+AegisBank sample personal loan policy
+Version: synthetic demo v1
+
+Eligibility
+Applicants must be at least 21 and at most 60 years old, have completed approved KYC, have a credit score of at least 700, and have monthly income of at least INR 25,000.
+
+Affordability
+The proposed monthly loan instalment must fit within 40 percent of monthly income after existing debt payments and must not exceed 35 percent of disposable income after existing expenses. Eligibility is an estimate and does not constitute an offer or a credit sanction.
+
+Repayment
+The loan is repaid in equal monthly instalments over the selected term. Annual interest rates are indicative; confirm actual rates and fees before applying.
+
+Reasons for rejection
+An application may be rejected for incomplete identity checks, insufficient income, excessive existing commitments, or a credit score below the minimum requirement. The applicant can request a review with updated evidence.
+
+Fees
+Processing fees and early repayment fees may apply under the final agreement. This synthetic demo does not execute a loan agreement, debit a processing fee, or issue credit.
