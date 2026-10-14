@@ -1,0 +1,52 @@
+name: aegisbank
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: aegisbank
+      POSTGRES_USER: aegisbank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegisbank -d aegisbank"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql+psycopg://aegisbank:${POSTGRES_PASSWORD}@database:5432/aegisbank
+      AEGIS_ENV: ${AEGIS_ENV:-development}
+      AEGIS_DEMO_ENABLED: ${AEGIS_DEMO_ENABLED:-true}
+      AEGIS_SECRET: ${AEGIS_SECRET:?Set AEGIS_SECRET in .env}
+      AEGIS_ALLOWED_ORIGINS: ${AEGIS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      AEGIS_AI_PROVIDER: ${AEGIS_AI_PROVIDER:-auto}
+      AEGIS_AI_MODE: ${AEGIS_AI_MODE:-auto}
+      AEGIS_KYC_VISION: ${AEGIS_KYC_VISION:-auto}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      AEGIS_OPENAI_API_KEY: ${AEGIS_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      AEGIS_OPENAI_MODEL: ${AEGIS_OPENAI_MODEL:-}
+    depends_on:
+      database:
+        condition: service_healthy
+    expose: ["8000"]
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        API_INTERNAL_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  postgres_data:

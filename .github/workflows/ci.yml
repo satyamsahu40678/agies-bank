@@ -1,0 +1,54 @@
+name: Application checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AEGIS_ENV: test
+      AEGIS_DEMO_ENABLED: 'true'
+      AEGIS_AI_PROVIDER: local
+      AEGIS_AI_MODE: local
+      AEGIS_KYC_VISION: local
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: make setup
+      - name: API integration tests and production web build
+        run: make check
+      - name: Independent HTTP security acceptance
+        run: backend/.venv/bin/python -m unittest discover -s tests/acceptance -v
+      - name: Frontend dependency audit
+        run: npm audit --prefix frontend --audit-level=low
+      - name: Backend dependency audit
+        run: uv tool run --from pip-audit==2.10.1 pip-audit --disable-pip --no-deps -r backend/requirements.lock
+      - name: Install browser
+        run: cd frontend && npx playwright install --with-deps chromium
+      - name: Start production web and API
+        run: |
+          mkdir -p logs
+          (cd backend && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../logs/api.log 2>&1) &
+          (cd frontend && npm run start > ../logs/web.log 2>&1) &
+          python3 scripts/wait_ready.py http://127.0.0.1:8000/api/health http://127.0.0.1:3000/login
+      - name: Browser journeys
+        run: npm run test:e2e --prefix frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: application-check-failure
+          path: |
+            logs/
+            test-results/
+            playwright-report/

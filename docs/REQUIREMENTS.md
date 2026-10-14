@@ -1,0 +1,34 @@
+# AegisBank delivery scope
+
+Source: the supplied AegisBank Hackathon Deck. The linked conversation is unavailable in this environment; additional requirements can be incorporated when supplied.
+
+## Application workflows
+
+1. Authenticated customer and analyst roles, server sessions, isolation between customers, explicit demo data and synthetic identities. Account overview, ledger, balances and spending analytics.
+2. KYC upload of ID and selfie, structured identity submission, sanctions screening, evidence and risk scoring, approve/review/reject decisions. High-risk decisions require analyst approval. Clearly distinguish simulated verification from live vendor verification.
+3. Assistant with scoped tools for balances, spending, budgets, affordability, document questions and transfer proposals. Financial mutations require explicit consent and governed execution; never let model output bypass policy.
+4. Document upload, text/PDF extraction, retrieval and Q&A with precise source excerpts and citations. Include seeded loan policy, insurance policy and sample statement. Isolate private documents per customer. Unsupported formats fail clearly.
+5. Loan and term-life recommendations with eligibility rules, EMI calculation, affordability and reasons. No automatic credit issuance.
+6. Transfer risk: amount, statistical anomaly, velocity, new beneficiary, country, device, VPN, impossible travel. Low risk executes atomically; medium risk requires step-up; high risk is held for analyst review. Prevent duplicate settlement and overdraft; use decimal/minor-unit money.
+7. Login event monitoring with geo/device history; fraud simulator using synthetic events. High-risk transfer produces hold, alert, case, customer response and analyst resolution. Analyst can approve/reject held transfers, review KYC and freeze/unfreeze accounts, with reasons.
+8. Orchestrator and five specialist agents, shared scoped tool registry, decision summaries and append-only audit timeline for event-driven and interactive workflows. Optional Claude tool loop enabled by secure configuration; local deterministic mode runs the complete demo without an API key. No hidden chain-of-thought stored.
+
+## Stack and operational decisions
+
+- Next.js/React/TypeScript customer app, analyst console and event simulator.
+- FastAPI/Python gateway, SQLAlchemy persistence. SQLite runs without infrastructure locally; PostgreSQL via Docker Compose is the deployment path. Mock core bank, KYC, sanctions and bureau are explicit demo adapters.
+- Local lexical retrieval with source citations works offline; architecture documents production embedding/pgvector adapter limitations. Never label local scoring as a learned production model.
+- Password hashing, expiring authenticated sessions, HTTP-only cookies, origin/CSRF protections, upload limits, scoped authorization and redacted audit/LLM payloads.
+- Production startup fails on insecure secrets/demo configuration; documented deployment and backup instructions. Real regulated banking requires real provider integrations and operational/compliance review.
+
+## Acceptance evidence
+
+Backend integration tests cover authentication and authorization, tenant isolation, money conservation, transfer idempotency, step-up and analyst decisions, fraud event flow, KYC, document citations, budgets/recommendations, audit and account freeze. Frontend must type-check/build and pass browser tests for customer and analyst workflows. Startup and health requests must be exercised. Every documented endpoint and UI control must be functional.
+
+## Subsequent user-approved additions
+
+- External bank and identity services remain explicit mocks unless real provider accounts/protocols are supplied.
+- Claude and OpenAI are selectable application-wide for chat/tool orchestration, grounded document answers and limited KYC vision. Supplying a supported key enables automatic mode; explicit local selection is respected.
+- Durable proactive financial-health workflows, bounded retries and run visibility; savings-goal planning without moving funds.
+- Analyst integration readiness and public-policy publication; customer indexed-source preview.
+- Cross-platform local launcher, complete README/status documentation, and application publication on a GitHub feature branch after checks.
