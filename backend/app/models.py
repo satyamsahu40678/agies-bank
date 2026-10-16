@@ -1,20 +1,10 @@
-from datetime import date, datetime, timezone
+"""Firestore domain records. No SQL engine or ORM is imported by the application."""
+
 import uuid
-from sqlalchemy import (
-    String,
-    Integer,
-    BigInteger,
-    Boolean,
-    Date,
-    DateTime,
-    ForeignKey,
-    JSON,
-    Text,
-    UniqueConstraint,
-    CheckConstraint,
-)
-from sqlalchemy.orm import Mapped, mapped_column
-from .db import Base
+from datetime import UTC, date, datetime, timezone
+from typing import ClassVar
+
+from .query import Field, Record
 
 
 def uid():
@@ -22,359 +12,338 @@ def uid():
 
 
 def utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-class User(Base):
-    __tablename__ = "users"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    name: Mapped[str] = mapped_column(String(100))
-    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
-    role: Mapped[str] = mapped_column(String(20), default="customer")
-    password_hash: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
+class User(Record):
+    __collection__ = "users"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    name: str = Field(default=None, nullable=False, kind="str")
+    email: str = Field(default=None, nullable=False, kind="str")
+    role: str = Field(default="customer", nullable=False, kind="str")
+    password_hash: str = Field(default=None, nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("email",)]
+    __references__: ClassVar[dict[str, str]] = {}
+
+
+class Account(Record):
+    __collection__ = "accounts"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    number: str = Field(default=None, nullable=False, kind="str")
+    balance_paise: int = Field(default=0, nullable=False, kind="int")
+    status: str = Field(default="active", nullable=False, kind="str")
+    kyc_status: str = Field(default="not_started", nullable=False, kind="str")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id",), ("number",)]
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class AuthSession(Record):
+    __collection__ = "auth_sessions"
+    id: str = Field(default=None, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    csrf_token: str = Field(default=None, nullable=False, kind="str")
+    expires_at: datetime = Field(default=None, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class LoginAttempt(Record):
+    __collection__ = "login_attempts"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    key: str = Field(default=None, nullable=False, kind="str")
+    success: bool = Field(default=False, nullable=False, kind="bool")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {}
+
+
+class Beneficiary(Record):
+    __collection__ = "beneficiaries"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    name: str = Field(default=None, nullable=False, kind="str")
+    bank: str = Field(default=None, nullable=False, kind="str")
+    account_last4: str = Field(default=None, nullable=False, kind="str")
+    account_number_hash: str = Field(default=None, nullable=False, kind="str")
+    is_new: bool = Field(default=True, nullable=False, kind="bool")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id", "account_number_hash")]
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class Transfer(Record):
+    __collection__ = "transfers"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    beneficiary_id: str = Field(default=None, nullable=False, kind="str")
+    amount_paise: int = Field(default=None, nullable=False, kind="int")
+    description: str = Field(default=None, nullable=False, kind="str")
+    idempotency_key: str = Field(default=None, nullable=False, kind="str")
+    fingerprint: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default=None, nullable=False, kind="str")
+    risk_score: int = Field(default=None, nullable=False, kind="int")
+    signals: list = Field(default=list, nullable=False, kind="list")
+    decision: str = Field(default=None, nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id", "idempotency_key")]
+    __references__: ClassVar[dict[str, str]] = {
+        "user_id": "users.id",
+        "beneficiary_id": "beneficiaries.id",
+    }
+
+
+class LedgerEntry(Record):
+    __collection__ = "ledger_entries"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    account_id: str = Field(default=None, nullable=False, kind="str")
+    amount_paise: int = Field(default=None, nullable=False, kind="int")
+    direction: str = Field(default=None, nullable=False, kind="str")
+    description: str = Field(default=None, nullable=False, kind="str")
+    category: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default="posted", nullable=False, kind="str")
+    balance_after_paise: int = Field(default=None, nullable=False, kind="int")
+    transfer_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("transfer_id", "account_id")]
+    __references__: ClassVar[dict[str, str]] = {
+        "account_id": "accounts.id",
+        "transfer_id": "transfers.id",
+    }
+
+
+class Budget(Record):
+    __collection__ = "budgets"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    category: str = Field(default=None, nullable=False, kind="str")
+    limit_paise: int = Field(default=None, nullable=False, kind="int")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id", "category")]
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class SecurityEvent(Record):
+    __collection__ = "security_events"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    kind: str = Field(default=None, nullable=False, kind="str")
+    city: str = Field(default=None, nullable=False, kind="str")
+    country: str = Field(default=None, nullable=False, kind="str")
+    latitude: float = Field(default=0.0, nullable=False, kind="float")
+    longitude: float = Field(default=0.0, nullable=False, kind="float")
+    ip_masked: str = Field(default=None, nullable=False, kind="str")
+    device: str = Field(default=None, nullable=False, kind="str")
+    is_new_device: bool = Field(default=None, nullable=False, kind="bool")
+    vpn: bool = Field(default=None, nullable=False, kind="bool")
+    risk_score: int = Field(default=None, nullable=False, kind="int")
+    signals: list = Field(default=list, nullable=False, kind="list")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class KYCSubmission(Record):
+    __collection__ = "kyc_submissions"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    full_name: str = Field(default=None, nullable=False, kind="str")
+    date_of_birth: str = Field(default=None, nullable=False, kind="str")
+    id_last4: str = Field(default=None, nullable=False, kind="str")
+    country: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default=None, nullable=False, kind="str")
+    risk_score: int = Field(default=None, nullable=False, kind="int")
+    reasons: list = Field(default=list, nullable=False, kind="list")
+    document_name: str = Field(default=None, nullable=False, kind="str")
+    document_hash: str = Field(default=None, nullable=False, kind="str")
+    selfie_hash: str = Field(default=None, nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class FraudCase(Record):
+    __collection__ = "fraud_cases"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    kind: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default="open", nullable=False, kind="str")
+    priority: str = Field(default=None, nullable=False, kind="str")
+    risk_score: int = Field(default=None, nullable=False, kind="int")
+    amount_paise: int = Field(default=0, nullable=False, kind="int")
+    summary: str = Field(default=None, nullable=False, kind="str")
+    signals: list = Field(default=list, nullable=False, kind="list")
+    transfer_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    kyc_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    resolved_by: str | None = Field(default=None, nullable=True, kind="str | None")
+    resolution_reason: str | None = Field(
+        default=None, nullable=True, kind="str | None"
     )
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("transfer_id",), ("kyc_id",)]
+    __references__: ClassVar[dict[str, str]] = {
+        "user_id": "users.id",
+        "transfer_id": "transfers.id",
+        "kyc_id": "kyc_submissions.id",
+        "resolved_by": "users.id",
+    }
 
 
-class Account(Base):
-    __tablename__ = "accounts"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str | None] = mapped_column(
-        ForeignKey("users.id"), unique=True, nullable=True
+class Alert(Record):
+    __collection__ = "alerts"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    case_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    title: str = Field(default=None, nullable=False, kind="str")
+    message: str = Field(default=None, nullable=False, kind="str")
+    severity: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default="unread", nullable=False, kind="str")
+    recognized: bool | None = Field(default=None, nullable=True, kind="bool | None")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {
+        "user_id": "users.id",
+        "case_id": "fraud_cases.id",
+    }
+
+
+class Document(Record):
+    __collection__ = "documents"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    title: str = Field(default=None, nullable=False, kind="str")
+    kind: str = Field(default=None, nullable=False, kind="str")
+    filename: str = Field(default=None, nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class DocumentChunk(Record):
+    __collection__ = "document_chunks"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    document_id: str = Field(default=None, nullable=False, kind="str")
+    text: str = Field(default=None, nullable=False, kind="str")
+    page: int = Field(default=None, nullable=False, kind="int")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"document_id": "documents.id"}
+
+
+class ChatMessage(Record):
+    __collection__ = "chat_messages"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    role: str = Field(default=None, nullable=False, kind="str")
+    content: str = Field(default=None, nullable=False, kind="str")
+    agent: str = Field(default=None, nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class AuditLog(Record):
+    __collection__ = "audit_logs"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str | None = Field(default=None, nullable=True, kind="str | None")
+    agent: str = Field(default=None, nullable=False, kind="str")
+    action: str = Field(default=None, nullable=False, kind="str")
+    summary: str = Field(default=None, nullable=False, kind="str")
+    risk_score: int | None = Field(default=None, nullable=True, kind="int | None")
+    tools: list = Field(default=list, nullable=False, kind="list")
+    trace_id: str = Field(default=uid, nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class SavingsGoal(Record):
+    __collection__ = "savings_goals"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    name: str = Field(default=None, nullable=False, kind="str")
+    target_paise: int = Field(default=None, nullable=False, kind="int")
+    saved_paise: int = Field(default=0, nullable=False, kind="int")
+    target_date: date | None = Field(default=None, nullable=True, kind="date | None")
+    status: str = Field(default="active", nullable=False, kind="str")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    updated_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = []
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
+
+
+class AgentRun(Record):
+    __collection__ = "agent_runs"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    kind: str = Field(default="financial_health", nullable=False, kind="str")
+    trigger: str = Field(default=None, nullable=False, kind="str")
+    dedup_key: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default="queued", nullable=False, kind="str")
+    attempts: int = Field(default=0, nullable=False, kind="int")
+    max_attempts: int = Field(default=3, nullable=False, kind="int")
+    manual_retries: int = Field(default=0, nullable=False, kind="int")
+    available_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    lease_expires_at: datetime | None = Field(
+        default=None, nullable=True, kind="datetime | None"
     )
-    number: Mapped[str] = mapped_column(String(30), unique=True)
-    balance_paise: Mapped[int] = mapped_column(BigInteger, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="active")
-    kyc_status: Mapped[str] = mapped_column(String(20), default="not_started")
-    __table_args__ = (
-        CheckConstraint(
-            "user_id IS NULL OR balance_paise >= 0", name="no_customer_overdraft"
-        ),
+    lease_token: str | None = Field(default=None, nullable=True, kind="str | None")
+    trace_id: str = Field(default=uid, nullable=False, kind="str")
+    tools: list = Field(default=list, nullable=False, kind="list")
+    decisions: list = Field(default=list, nullable=False, kind="list")
+    output: dict = Field(default=dict, nullable=False, kind="dict")
+    error: str | None = Field(default=None, nullable=True, kind="str | None")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    started_at: datetime | None = Field(
+        default=None, nullable=True, kind="datetime | None"
     )
-
-
-class AuthSession(Base):
-    __tablename__ = "auth_sessions"
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    csrf_token: Mapped[str] = mapped_column(String(64))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
-class LoginAttempt(Base):
-    __tablename__ = "login_attempts"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    key: Mapped[str] = mapped_column(String(64), index=True)
-    success: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
+    completed_at: datetime | None = Field(
+        default=None, nullable=True, kind="datetime | None"
     )
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id", "dedup_key")]
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
 
 
-class Beneficiary(Base):
-    __tablename__ = "beneficiaries"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    name: Mapped[str] = mapped_column(String(100))
-    bank: Mapped[str] = mapped_column(String(100))
-    account_last4: Mapped[str] = mapped_column(String(4))
-    account_number_hash: Mapped[str] = mapped_column(String(64))
-    is_new: Mapped[bool] = mapped_column(Boolean, default=True)
-    __table_args__ = (UniqueConstraint("user_id", "account_number_hash"),)
+class FinancialInsight(Record):
+    __collection__ = "financial_insights"
+    id: str = Field(default=uid, nullable=False, kind="str")
+    user_id: str = Field(default=None, nullable=False, kind="str")
+    run_id: str = Field(default=None, nullable=False, kind="str")
+    kind: str = Field(default=None, nullable=False, kind="str")
+    key: str = Field(default=None, nullable=False, kind="str")
+    fingerprint: str = Field(default=None, nullable=False, kind="str")
+    severity: str = Field(default=None, nullable=False, kind="str")
+    title: str = Field(default=None, nullable=False, kind="str")
+    message: str = Field(default=None, nullable=False, kind="str")
+    action_label: str = Field(default=None, nullable=False, kind="str")
+    action_path: str = Field(default=None, nullable=False, kind="str")
+    status: str = Field(default="active", nullable=False, kind="str")
+    metrics: dict = Field(default=dict, nullable=False, kind="dict")
+    created_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    updated_at: datetime = Field(default=utcnow, nullable=False, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id", "kind", "key")]
+    __references__: ClassVar[dict[str, str]] = {
+        "user_id": "users.id",
+        "run_id": "agent_runs.id",
+    }
 
 
-class Transfer(Base):
-    __tablename__ = "transfers"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    beneficiary_id: Mapped[str] = mapped_column(ForeignKey("beneficiaries.id"))
-    amount_paise: Mapped[int] = mapped_column(BigInteger)
-    description: Mapped[str] = mapped_column(String(200))
-    idempotency_key: Mapped[str] = mapped_column(String(100))
-    fingerprint: Mapped[str] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(30))
-    risk_score: Mapped[int] = mapped_column(Integer)
-    signals: Mapped[list] = mapped_column(JSON, default=list)
-    decision: Mapped[str] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    __table_args__ = (
-        UniqueConstraint("user_id", "idempotency_key"),
-        CheckConstraint("amount_paise > 0"),
-    )
+class Automation(Record):
+    __collection__ = "automations"
+    id: str = Field(default=uid)
+    user_id: str = Field()
+    kind: str = Field()
+    name: str = Field()
+    enabled: bool = Field(default=True, kind="bool")
+    interval_hours: int = Field(default=24, kind="int")
+    next_run_at: datetime = Field(default=utcnow, kind="datetime")
+    last_run_id: str | None = Field(nullable=True)
+    created_at: datetime = Field(default=utcnow, kind="datetime")
+    updated_at: datetime = Field(default=utcnow, kind="datetime")
+    __unique__: ClassVar[list[tuple[str, ...]]] = [("user_id", "kind")]
+    __references__: ClassVar[dict[str, str]] = {"user_id": "users.id"}
 
 
-class LedgerEntry(Base):
-    __tablename__ = "ledger_entries"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
-    amount_paise: Mapped[int] = mapped_column(BigInteger)
-    direction: Mapped[str] = mapped_column(String(10))
-    description: Mapped[str] = mapped_column(String(200))
-    category: Mapped[str] = mapped_column(String(50))
-    status: Mapped[str] = mapped_column(String(30), default="posted")
-    balance_after_paise: Mapped[int] = mapped_column(BigInteger)
-    transfer_id: Mapped[str | None] = mapped_column(
-        ForeignKey("transfers.id"), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    __table_args__ = (
-        UniqueConstraint("transfer_id", "account_id"),
-        CheckConstraint("amount_paise > 0"),
-    )
-
-
-class Budget(Base):
-    __tablename__ = "budgets"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    category: Mapped[str] = mapped_column(String(50))
-    limit_paise: Mapped[int] = mapped_column(BigInteger)
-    __table_args__ = (
-        UniqueConstraint("user_id", "category"),
-        CheckConstraint("limit_paise >= 0"),
-    )
-
-
-class SecurityEvent(Base):
-    __tablename__ = "security_events"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(40))
-    city: Mapped[str] = mapped_column(String(80))
-    country: Mapped[str] = mapped_column(String(50))
-    latitude: Mapped[float] = mapped_column(default=0.0)
-    longitude: Mapped[float] = mapped_column(default=0.0)
-    ip_masked: Mapped[str] = mapped_column(String(50))
-    device: Mapped[str] = mapped_column(String(100))
-    is_new_device: Mapped[bool] = mapped_column(Boolean)
-    vpn: Mapped[bool] = mapped_column(Boolean)
-    risk_score: Mapped[int] = mapped_column(Integer)
-    signals: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class KYCSubmission(Base):
-    __tablename__ = "kyc_submissions"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    full_name: Mapped[str] = mapped_column(String(100))
-    date_of_birth: Mapped[str] = mapped_column(String(10))
-    id_last4: Mapped[str] = mapped_column(String(4))
-    country: Mapped[str] = mapped_column(String(50))
-    status: Mapped[str] = mapped_column(String(20))
-    risk_score: Mapped[int] = mapped_column(Integer)
-    reasons: Mapped[list] = mapped_column(JSON, default=list)
-    document_name: Mapped[str] = mapped_column(String(200))
-    document_hash: Mapped[str] = mapped_column(String(64))
-    selfie_hash: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class FraudCase(Base):
-    __tablename__ = "fraud_cases"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(30))
-    status: Mapped[str] = mapped_column(String(30), default="open")
-    priority: Mapped[str] = mapped_column(String(20))
-    risk_score: Mapped[int] = mapped_column(Integer)
-    amount_paise: Mapped[int] = mapped_column(BigInteger, default=0)
-    summary: Mapped[str] = mapped_column(String(500))
-    signals: Mapped[list] = mapped_column(JSON, default=list)
-    transfer_id: Mapped[str | None] = mapped_column(
-        ForeignKey("transfers.id"), nullable=True, unique=True
-    )
-    kyc_id: Mapped[str | None] = mapped_column(
-        ForeignKey("kyc_submissions.id"), nullable=True, unique=True
-    )
-    resolved_by: Mapped[str | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    resolution_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class Alert(Base):
-    __tablename__ = "alerts"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    case_id: Mapped[str | None] = mapped_column(
-        ForeignKey("fraud_cases.id"), nullable=True
-    )
-    title: Mapped[str] = mapped_column(String(150))
-    message: Mapped[str] = mapped_column(String(500))
-    severity: Mapped[str] = mapped_column(String(20))
-    status: Mapped[str] = mapped_column(String(30), default="unread")
-    recognized: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class Document(Base):
-    __tablename__ = "documents"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True, index=True
-    )
-    title: Mapped[str] = mapped_column(String(150))
-    kind: Mapped[str] = mapped_column(String(30))
-    filename: Mapped[str] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class DocumentChunk(Base):
-    __tablename__ = "document_chunks"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), index=True)
-    text: Mapped[str] = mapped_column(Text)
-    page: Mapped[int] = mapped_column(Integer)
-
-
-class ChatMessage(Base):
-    __tablename__ = "chat_messages"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    role: Mapped[str] = mapped_column(String(20))
-    content: Mapped[str] = mapped_column(Text)
-    agent: Mapped[str] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True, index=True
-    )
-    agent: Mapped[str] = mapped_column(String(50))
-    action: Mapped[str] = mapped_column(String(100))
-    summary: Mapped[str] = mapped_column(String(500))
-    risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    tools: Mapped[list] = mapped_column(JSON, default=list)
-    trace_id: Mapped[str] = mapped_column(String(32), default=uid)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-
-
-class SavingsGoal(Base):
-    """Customer planning record; saving a goal never changes the ledger."""
-
-    __tablename__ = "savings_goals"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    name: Mapped[str] = mapped_column(String(100))
-    target_paise: Mapped[int] = mapped_column(BigInteger)
-    saved_paise: Mapped[int] = mapped_column(BigInteger, default=0)
-    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="active")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    __table_args__ = (
-        CheckConstraint(
-            "target_paise > 0 AND saved_paise >= 0 AND saved_paise <= target_paise",
-            name="valid_goal_amounts",
-        ),
-        CheckConstraint(
-            "status IN ('active','paused','completed')", name="valid_goal_status"
-        ),
-    )
-
-
-class AgentRun(Base):
-    """Durable, leased read-only workflow with bounded retry and decision evidence."""
-
-    __tablename__ = "agent_runs"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(40), default="financial_health")
-    trigger: Mapped[str] = mapped_column(String(40))
-    dedup_key: Mapped[str] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
-    manual_retries: Mapped[int] = mapped_column(Integer, default=0)
-    available_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, index=True
-    )
-    lease_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    lease_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    trace_id: Mapped[str] = mapped_column(String(32), default=uid)
-    tools: Mapped[list] = mapped_column(JSON, default=list)
-    decisions: Mapped[list] = mapped_column(JSON, default=list)
-    output: Mapped[dict] = mapped_column(JSON, default=dict)
-    error: Mapped[str | None] = mapped_column(String(250), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    __table_args__ = (
-        UniqueConstraint("user_id", "dedup_key", name="unique_agent_run_event"),
-        CheckConstraint(
-            "status IN ('queued','running','completed','failed')",
-            name="valid_agent_run_status",
-        ),
-        CheckConstraint(
-            "attempts >= 0 AND max_attempts BETWEEN 1 AND 5 AND manual_retries BETWEEN 0 AND 3",
-            name="bounded_agent_retries",
-        ),
-    )
-
-
-class FinancialInsight(Base):
-    __tablename__ = "financial_insights"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id"))
-    kind: Mapped[str] = mapped_column(String(40))
-    key: Mapped[str] = mapped_column(String(100))
-    fingerprint: Mapped[str] = mapped_column(String(64))
-    severity: Mapped[str] = mapped_column(String(20))
-    title: Mapped[str] = mapped_column(String(150))
-    message: Mapped[str] = mapped_column(String(750))
-    action_label: Mapped[str] = mapped_column(String(60))
-    action_path: Mapped[str] = mapped_column(String(100))
-    status: Mapped[str] = mapped_column(String(20), default="active")
-    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    __table_args__ = (
-        UniqueConstraint("user_id", "kind", "key", name="unique_customer_insight"),
-        CheckConstraint(
-            "status IN ('active','dismissed','resolved')", name="valid_insight_status"
-        ),
-        CheckConstraint(
-            "severity IN ('info','warning','critical')", name="valid_insight_severity"
-        ),
-    )
+__all__ = [
+    name
+    for name, value in list(globals().items())
+    if isinstance(value, type) and issubclass(value, Record) and value is not Record
+] + ["uid", "utcnow", "date", "datetime", "timezone"]

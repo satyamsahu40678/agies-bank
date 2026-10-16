@@ -4,7 +4,7 @@ import hmac
 import ipaddress
 import math
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from ..query import select, update
 from ..models import *
 from ..config import DEMO_ENABLED, SECRET
 from .common import money, audit

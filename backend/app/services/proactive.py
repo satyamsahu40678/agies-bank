@@ -19,9 +19,8 @@ from threading import Event, Thread
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, exists, func, or_, select, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import aliased
+from ..query import and_, case, func, or_, select, update
+from ..query import IntegrityError, ConcurrentWrite
 
 from ..db import SessionLocal
 from ..models import (
@@ -290,7 +289,9 @@ def insight_json(insight):
     }
 
 
-def enqueue_health_check(db, user, trigger, dedup_key=None, *, stale_only=False):
+def enqueue_health_check(
+    db, user, trigger, dedup_key=None, *, stale_only=False, kind="financial_health"
+):
     """Stage an event in the caller's transaction. Caller commits with its business event."""
     _customer(user)
     now = utcnow()
@@ -301,6 +302,7 @@ def enqueue_health_check(db, user, trigger, dedup_key=None, *, stale_only=False)
             select(AgentRun)
             .where(
                 AgentRun.user_id == user.id,
+                AgentRun.kind == kind,
                 or_(
                     AgentRun.status.in_(["queued", "running"]),
                     and_(
@@ -315,7 +317,7 @@ def enqueue_health_check(db, user, trigger, dedup_key=None, *, stale_only=False)
         if recent:
             return recent
     raw = str(dedup_key) if dedup_key is not None else str(int(now.timestamp()) // 60)
-    key = hashlib.sha256((trigger + ":" + raw).encode()).hexdigest()
+    key = hashlib.sha256((kind + ":" + trigger + ":" + raw).encode()).hexdigest()
     existing = db.scalar(
         select(AgentRun).where(AgentRun.user_id == user.id, AgentRun.dedup_key == key)
     )
@@ -330,7 +332,9 @@ def enqueue_health_check(db, user, trigger, dedup_key=None, *, stale_only=False)
     ).all()
     if len(pending) >= 100:
         return pending[-1]
-    run = AgentRun(user_id=user.id, trigger=trigger, dedup_key=key, available_at=now)
+    run = AgentRun(
+        user_id=user.id, kind=kind, trigger=trigger, dedup_key=key, available_at=now
+    )
     try:
         with db.begin_nested():
             db.add(run)
@@ -360,7 +364,11 @@ def refresh_insights(db, user):
     _customer(user)
     pending = db.scalar(
         select(AgentRun)
-        .where(AgentRun.user_id == user.id, AgentRun.status.in_(["queued", "running"]))
+        .where(
+            AgentRun.user_id == user.id,
+            AgentRun.kind == "financial_health",
+            AgentRun.status.in_(["queued", "running"]),
+        )
         .order_by(AgentRun.created_at.desc())
         .limit(1)
     )
@@ -368,7 +376,7 @@ def refresh_insights(db, user):
         return run_json(pending)
     latest = db.scalar(
         select(AgentRun.id)
-        .where(AgentRun.user_id == user.id)
+        .where(AgentRun.user_id == user.id, AgentRun.kind == "financial_health")
         .order_by(AgentRun.created_at.desc())
         .limit(1)
     )
@@ -457,13 +465,17 @@ def list_insights(db, user):
     enqueue_health_check(db, user, "overview", stale_only=True)
     latest = db.scalar(
         select(AgentRun)
-        .where(AgentRun.user_id == user.id)
+        .where(AgentRun.user_id == user.id, AgentRun.kind == "financial_health")
         .order_by(AgentRun.created_at.desc())
         .limit(1)
     )
     completed = db.scalar(
         select(AgentRun)
-        .where(AgentRun.user_id == user.id, AgentRun.status == "completed")
+        .where(
+            AgentRun.user_id == user.id,
+            AgentRun.kind == "financial_health",
+            AgentRun.status == "completed",
+        )
         .order_by(AgentRun.completed_at.desc())
         .limit(1)
     )
@@ -482,7 +494,9 @@ def list_insights(db, user):
 
 def _eligible(now):
     return and_(
-        AgentRun.kind == "financial_health",
+        AgentRun.kind.in_(
+            ["financial_health", "security_review", "document_review", "savings_coach"]
+        ),
         AgentRun.attempts < AgentRun.max_attempts,
         or_(
             and_(AgentRun.status == "queued", AgentRun.available_at <= now),
@@ -492,64 +506,57 @@ def _eligible(now):
 
 
 def claim_next_run(db, now=None):
-    """Atomically claim one due job. PostgreSQL skips locks; SQLite uses a compare-and-set UPDATE."""
+    """Durably claim one due job with a tenant fence and bounded conflict retry."""
+    import time
+
     now = now or utcnow()
-    # A crash on the last attempt must eventually reach a terminal state.
-    db.execute(
-        update(AgentRun)
-        .where(
-            AgentRun.status == "running",
-            AgentRun.lease_expires_at <= now,
-            AgentRun.attempts >= AgentRun.max_attempts,
-        )
-        .values(
-            status="failed",
-            error="Worker lease expired after the final attempt.",
-            completed_at=now,
-            lease_token=None,
-            lease_expires_at=None,
-        ),
-        execution_options={"synchronize_session": False},
-    )
-    other = aliased(AgentRun)
-    active_other = exists(
-        select(other.id).where(
-            other.user_id == AgentRun.user_id,
-            other.id != AgentRun.id,
-            other.status == "running",
-            other.lease_expires_at > now,
-        )
-    )
-    candidate = (
-        select(AgentRun.id)
-        .join(User, User.id == AgentRun.user_id)
-        .where(_eligible(now), User.role == "customer", ~active_other)
-        .order_by(AgentRun.available_at, AgentRun.created_at)
-        .limit(1)
-    )
-    if db.get_bind().dialect.name == "postgresql":
-        # Lock the customer too, so parallel workers cannot claim different runs for one tenant.
-        candidate = candidate.with_for_update(skip_locked=True, of=(AgentRun, User))
-    token = uid()
-    claimed = db.execute(
-        update(AgentRun)
-        .where(AgentRun.id == candidate.scalar_subquery(), _eligible(now))
-        .values(
-            status="running",
-            attempts=AgentRun.attempts + 1,
-            lease_token=token,
-            lease_expires_at=now + LEASE,
-            started_at=now,
-            completed_at=None,
-            error=None,
-        )
-        .returning(AgentRun.id),
-        execution_options={"synchronize_session": False},
-    ).scalar_one_or_none()
-    if not claimed:
-        return None
-    db.expire_all()
-    return db.get(AgentRun, claimed)
+    for attempt in range(8):
+        try:
+            runs = db.scalars(
+                select(AgentRun).order_by(AgentRun.available_at, AgentRun.created_at)
+            ).all()
+            active_users = set()
+            for run in runs:
+                if (
+                    run.status == "running"
+                    and run.lease_expires_at
+                    and run.lease_expires_at <= now
+                    and run.attempts >= run.max_attempts
+                ):
+                    run.status = "failed"
+                    run.error = "Worker lease expired after the final attempt."
+                    run.completed_at = now
+                    run.lease_token = run.lease_expires_at = None
+                if (
+                    run.status == "running"
+                    and run.lease_expires_at
+                    and run.lease_expires_at > now
+                ):
+                    active_users.add(run.user_id)
+            candidate = None
+            for run in runs:
+                user = db.get(User, run.user_id)
+                if (
+                    user
+                    and user.role == "customer"
+                    and run.user_id not in active_users
+                    and _eligible(now).evaluate(run)
+                ):
+                    candidate = run
+                    run.status = "running"
+                    run.attempts += 1
+                    run.lease_token = uid()
+                    run.lease_expires_at = now + LEASE
+                    run.started_at = now
+                    run.completed_at = run.error = None
+                    break
+            db.commit()
+            return candidate
+        except ConcurrentWrite:
+            db.rollback()
+            if attempt == 7:
+                raise
+            time.sleep(0.01 * (attempt + 1))
 
 
 def _insight(kind, key, severity, title, message, label, path, metrics):
@@ -925,7 +932,13 @@ def _execute(db, run_id, lease_token):
         raise LostLease()
     user = db.get(User, run.user_id)
     _customer(user)
-    summary, proposals = _health_plan(db, user, run)
+    if run.kind == "financial_health":
+        summary, proposals = _health_plan(db, user, run)
+        run_tools = list(TOOLS)
+    else:
+        from .automations import build_plan
+
+        summary, proposals, run_tools = build_plan(db, user, run)
     existing = {
         (insight.kind, insight.key): insight
         for insight in db.scalars(
@@ -951,12 +964,18 @@ def _execute(db, run_id, lease_token):
             insight.updated_at = now
             insight.status = "dismissed" if keep_dismissed else "active"
     for key, insight in existing.items():
-        if key not in seen and insight.status == "active":
+        same_workflow = db.get(AgentRun, insight.run_id)
+        if (
+            key not in seen
+            and insight.status == "active"
+            and same_workflow
+            and same_workflow.kind == run.kind
+        ):
             insight.status = "resolved"
             insight.updated_at = now
     decisions = [
-        f"Reviewed {len(TOOLS)} customer-scoped read-only tools.",
-        f"Produced {len(proposals)} financial guidance items from posted ledger records and customer plans.",
+        f"Reviewed {len(run_tools)} customer-scoped read-only tools.",
+        f"Produced {len(proposals)} guidance items from the scoped {run.kind.replace('_', ' ')} review.",
         "No money, identity status, account controls or budgets were changed.",
     ]
     # Fence completion and every staged output behind the current lease token.
@@ -970,7 +989,7 @@ def _execute(db, run_id, lease_token):
         )
         .values(
             status="completed",
-            tools=list(TOOLS),
+            tools=run_tools,
             decisions=decisions,
             output={"summary": summary, "insight_count": len(proposals)},
             completed_at=now,
@@ -988,7 +1007,7 @@ def _execute(db, run_id, lease_token):
         "orchestrator",
         "agent_run_completed",
         decisions[1],
-        list(TOOLS),
+        run_tools,
         trace_id=run.trace_id,
     )
 
@@ -1053,16 +1072,29 @@ class ProactiveWorker:
         )
 
     def start(self):
-        self.thread.start()
+        self.enabled = (
+            __import__("os").getenv("AEGIS_WORKER_ENABLED", "true").lower() == "true"
+        )
+        if self.enabled:
+            self.thread.start()
         return self
 
     def stop(self, timeout=10):
         self.stopped.set()
-        self.thread.join(timeout=timeout)
+        if self.thread.is_alive():
+            self.thread.join(timeout=timeout)
 
     def _loop(self):
+        import time
+
+        last_dispatch = 0
         while not self.stopped.is_set():
             try:
+                if time.monotonic() - last_dispatch >= 60:
+                    from .automations import dispatch_due
+
+                    dispatch_due(self.factory)
+                    last_dispatch = time.monotonic()
                 worked = process_next(self.factory)
             except Exception as exc:
                 logger.warning(

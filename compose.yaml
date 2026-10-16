@@ -1,47 +1,48 @@
 name: aegisbank
 services:
-  database:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: aegisbank
-      POSTGRES_USER: aegisbank
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+  firestore:
+    image: node:24-alpine
+    working_dir: /config
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./firebase.json:/config/firebase.json:ro
+      - ./firestore.rules:/config/firestore.rules:ro
+      - ./firestore.indexes.json:/config/firestore.indexes.json:ro
+      - firestore_data:/data
+    # Java and Firebase CLI are only needed by the development emulator.
+    command: >-
+      sh -c 'apk add --no-cache openjdk21-jre &&
+      if [ -f /data/firebase-export-metadata.json ]; then set -- --import=/data; else set --; fi;
+      npx --yes firebase-tools@15.34.0 emulators:start --only firestore --project demo-aegis-bank "$$@" --export-on-exit=/data'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aegisbank -d aegisbank"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8085').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
-      retries: 15
+      start_period: 120s
+      retries: 30
     restart: unless-stopped
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      DATABASE_URL: postgresql+psycopg://aegisbank:${POSTGRES_PASSWORD}@database:5432/aegisbank
-      AEGIS_ENV: ${AEGIS_ENV:-development}
-      AEGIS_DEMO_ENABLED: ${AEGIS_DEMO_ENABLED:-true}
-      AGIES_SECRET: ${AGIES_SECRET:?Set AGIES_SECRET in .env}
+      AEGIS_STORAGE_BACKEND: firestore
+      FIRESTORE_EMULATOR_HOST: firestore:8085
+      GOOGLE_CLOUD_PROJECT: demo-aegis-bank
+      AEGIS_ENV: development
+      AEGIS_DEMO_ENABLED: 'true'
+      AGIES_SECRET: ${AGIES_SECRET:-local-compose-secret-for-emulator-only}
       AEGIS_ALLOWED_ORIGINS: ${AEGIS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       AEGIS_AI_PROVIDER: ${AEGIS_AI_PROVIDER:-auto}
-      AEGIS_AI_MODE: ${AEGIS_AI_MODE:-auto}
       AEGIS_KYC_VISION: ${AEGIS_KYC_VISION:-auto}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
-      AEGIS_OPENAI_API_KEY: ${AEGIS_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
-      AEGIS_OPENAI_MODEL: ${AEGIS_OPENAI_MODEL:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}
-      GEMINI_MODEL: ${GEMINI_MODEL:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      FIRESTORE_DATABASE: ${FIRESTORE_DATABASE:-(default)}
-      FIRESTORE_AGENT_NOTIFICATIONS: ${FIRESTORE_AGENT_NOTIFICATIONS:-false}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AEGIS_OPENAI_API_KEY: ${AEGIS_OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     depends_on:
-      database:
+      firestore:
         condition: service_healthy
-    expose: ["8000"]
+    expose: ['8000']
     restart: unless-stopped
   web:
     build:
@@ -49,11 +50,10 @@ services:
       dockerfile: Dockerfile.web
       args:
         API_INTERNAL_URL: http://api:8000
-    ports:
-      - "127.0.0.1:3000:3000"
+    ports: ['127.0.0.1:3000:3000']
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
 volumes:
-  postgres_data:
+  firestore_data:

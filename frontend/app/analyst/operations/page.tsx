@@ -1,0 +1,10 @@
+"use client";
+import { useResource, dateTime } from "@/lib/api";
+import { Button, Card, ErrorState, LoadingState, Notice, PageHeader, StatusBadge } from "@/components/ui";
+type Operations = { storage: string; reconciliation: { ok: boolean; accounts_checked: number; mismatched_account_ids: string[]; invalid_entry_ids: string[]; total_balance_paise: number }; jobs: Record<string, number>; expired_leases: number; automations: number; checked_at: string };
+export default function OperationsPage() {
+  const {data, loading, error, refresh} = useResource<Operations>("/analyst/operations");
+  if (loading && !data) return <LoadingState />;
+  if (error || !data) return <ErrorState message={error || "Operations are unavailable"} onRetry={refresh} />;
+  return <><PageHeader eyebrow="SERVICE OPERATIONS" title="Ledger & workflow health" description="Read-only checks of posted entries, account balances, and durable agent jobs." action={<Button onClick={refresh}>Run checks again</Button>} /><Notice tone={data.reconciliation.ok ? "success" : "danger"}>{data.reconciliation.ok ? "All account balances match their posted ledger entries. Funds are conserved across the ledger." : "Ledger discrepancies need investigation. No balances have been changed."}</Notice><div className="grid three" style={{marginTop:24}}><Card><p className="eyebrow">ACCOUNTS CHECKED</p><h2>{data.reconciliation.accounts_checked}</h2><StatusBadge status={data.reconciliation.ok ? "verified" : "review"} /></Card><Card><p className="eyebrow">SAVED AUTOMATIONS</p><h2>{data.automations}</h2><p>{data.storage} storage</p></Card><Card><p className="eyebrow">EXPIRED WORKER LEASES</p><h2>{data.expired_leases}</h2><p>Eligible jobs are reclaimed by the next worker.</p></Card></div><Card className="mt-24"><h2>Durable job queue</h2><div className="grid four">{Object.entries(data.jobs).map(([state,count]) => <div key={state}><StatusBadge status={state} /><h2>{count}</h2></div>)}</div><p>Checked {dateTime(data.checked_at)}. Failed jobs retain their trace and bounded retry history.</p></Card></>;
+}

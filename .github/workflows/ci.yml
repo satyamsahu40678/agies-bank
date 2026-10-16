@@ -5,8 +5,9 @@ permissions:
 jobs:
   verification:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
+      AEGIS_STORAGE_BACKEND: memory
       AEGIS_ENV: test
       AEGIS_DEMO_ENABLED: 'true'
       AEGIS_AI_PROVIDER: local
@@ -23,11 +24,17 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: astral-sh/setup-uv@v6
       - name: Install locked dependencies
         run: make setup
       - name: API integration tests and production web build
         run: make check
+      - name: Complete suite against native Firestore emulator
+        run: make test-firestore
       - name: Independent HTTP security acceptance
         run: backend/.venv/bin/python -m unittest discover -s tests/acceptance -v
       - name: Frontend dependency audit

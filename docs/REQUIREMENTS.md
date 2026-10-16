@@ -16,7 +16,7 @@ Source: the supplied AegisBank Hackathon Deck. The linked conversation is unavai
 ## Stack and operational decisions
 
 - Next.js/React/TypeScript customer app, analyst console and event simulator.
-- FastAPI/Python gateway, SQLAlchemy persistence. SQLite runs without infrastructure locally; PostgreSQL via Docker Compose is the deployment path. Mock core bank, KYC, sanctions and bureau are explicit demo adapters.
+- FastAPI/Python gateway with authoritative Firestore storage. Explicit memory mode supports disposable local demos; Docker Compose supplies a persistent local Firestore emulator. Mock core bank, KYC, sanctions and bureau are explicit demo adapters.
 - Local lexical retrieval with source citations works offline; architecture documents production embedding/pgvector adapter limitations. Never label local scoring as a learned production model.
 - Password hashing, expiring authenticated sessions, HTTP-only cookies, origin/CSRF protections, upload limits, scoped authorization and redacted audit/LLM payloads.
 - Production startup fails on insecure secrets/demo configuration; documented deployment and backup instructions. Real regulated banking requires real provider integrations and operational/compliance review.

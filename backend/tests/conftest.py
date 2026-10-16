@@ -11,6 +11,8 @@ os.environ.update(
         "AEGIS_ENV": "test",
         "AEGIS_DEMO_ENABLED": "true",
         "DATABASE_URL": "sqlite://",
+        "AEGIS_STORAGE_BACKEND": "memory",
+        "AEGIS_WORKER_ENABLED": "false",
         "AGIES_SECRET": "agies-test-session-secret-never-use-in-production",
         "AEGIS_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000",
         "AEGIS_AI_PROVIDER": "local",
@@ -19,44 +21,31 @@ os.environ.update(
     }
 )
 import pytest
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 from app.main import app
-from app.db import Base, get_db
+from app.db import get_db, SessionFactory, MemoryBackend, FirestoreBackend
 from app.seed import seed_demo
-from app.immutability import install_guards
 
 
 @pytest.fixture
 def db_factory(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'test.db'}",
-        connect_args={"check_same_thread": False, "timeout": 30},
-    )
-
-    @event.listens_for(engine, "connect")
-    def setup(conn, _):
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA journal_mode=WAL")
-
-    Base.metadata.create_all(engine)
-    with engine.begin() as conn:
-        install_guards(conn)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    if os.getenv("AEGIS_TEST_FIRESTORE") == "true":
+        if not os.getenv("FIRESTORE_EMULATOR_HOST"):
+            pytest.fail("AEGIS_TEST_FIRESTORE requires a local FIRESTORE_EMULATOR_HOST")
+        import uuid
+        factory = SessionFactory(FirestoreBackend(project="demo-test-" + uuid.uuid4().hex[:12]))
+    else:
+        factory = SessionFactory(MemoryBackend())
     with factory() as db:
         seed_demo(db)
     yield factory
-    engine.dispose()
 
 
 @pytest.fixture
 def client(db_factory, monkeypatch):
     from app import main
-
-    monkeypatch.setattr(main, "engine", db_factory.kw["bind"])
+    monkeypatch.setenv("AEGIS_WORKER_ENABLED", "true")
     monkeypatch.setattr(main, "SessionLocal", db_factory)
-
     def override():
         with db_factory() as db:
             try:
@@ -64,7 +53,6 @@ def client(db_factory, monkeypatch):
             except Exception:
                 db.rollback()
                 raise
-
     app.dependency_overrides[get_db] = override
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
@@ -94,3 +82,10 @@ def analyst(client):
     c.headers["X-CSRF-Token"] = result.json()["csrf_token"]
     yield c
     c.close()
+
+
+def seed_records(db, records):
+    """Bounded native fixture writes for complete-ledger aggregation regressions."""
+    for start in range(0, len(records), 250):
+        writes = {r.__collection__ + "/" + r.id: r.to_dict() for r in records[start:start+250]}
+        db.backend.commit({}, writes)

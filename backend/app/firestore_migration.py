@@ -13,9 +13,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.schema import Table
 
-from . import models as _models
+from . import legacy_models as _models
 from .config import ROOT
-from .db import Base
+from .legacy_db import Base
 
 
 BATCH_SIZE = 400
@@ -123,7 +123,9 @@ def migrate_sqlite_to_firestore(
                         continue
                     if batch is None:
                         raise RuntimeError("Firestore migration batch was not initialized.")
-                    batch.set(reference, values)
+                    # A create precondition prevents racing writers from being
+                    # overwritten between the existence check and the commit.
+                    batch.create(reference, values)
                     batch_size += 1
                     written += 1
                     if batch_size == BATCH_SIZE:
@@ -199,6 +201,10 @@ def main() -> None:
             f"{collection}: source={result['source']} "
             f"written={result['written']} skipped_identical={result['skipped_identical']}"
         )
+    if args.apply:
+        from .maintenance import initialize_store
+        from .db import FirestoreBackend, SessionFactory
+        print(initialize_store(SessionFactory(FirestoreBackend(project=project, database=database))))
 
 
 if __name__ == "__main__":

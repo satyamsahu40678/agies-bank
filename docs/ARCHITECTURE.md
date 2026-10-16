@@ -1,78 +1,103 @@
 # Architecture and trust boundaries
 
-AegisBank implements the deck's banking story as a persistent, governed application. The core bank, identity verifier, sanctions source and credit bureau use synthetic demo adapters. A working demo is not certification for handling deposits or issuing regulated credit.
+AegisBank is a synthetic banking prototype with customer and analyst workspaces.
+The browser never talks directly to Firestore or a model provider. FastAPI owns
+authentication, authorization, risk gates, settlement and document scopes.
 
 ```mermaid
-flowchart LR
-  Customer[Customer app] --> Web[Next.js gateway]
-  Analyst[Analyst console] --> Web
-  Web --> API[FastAPI: sessions, CSRF, authorization]
-  API --> Core[Atomic core-bank ledger]
-  API --> Events[Login and payment events]
-  API --> Orchestrator[Agent orchestrator]
-  API --> Goals[Customer savings plans]
-  Events --> Queue[Durable financial-health queue]
-  Queue --> Worker[Leased read-only worker]
-  Worker --> Insights[Financial guidance and run history]
-  Events --> Fraud[Fraud specialist: rules and geo signals]
-  Orchestrator --> KYC[KYC specialist]
-  Orchestrator --> Assistant[Financial assistant]
-  Orchestrator --> Docs[Document intelligence]
-  Orchestrator --> Recommendations[Product recommendations]
-  Fraud --> Policy[Autonomy and approval policy]
-  Assistant --> Policy
-  KYC --> Policy
-  Policy --> Core
-  Policy --> Cases[Analyst cases and customer alerts]
-  API --> DB[(SQLite or PostgreSQL)]
-  Core --> DB
-  Cases --> DB
-  Goals --> DB
-  Queue --> DB
-  Insights --> DB
-  Orchestrator --> Audit[Decision summaries and scoped tool records]
-  Fraud --> Audit
-  Audit --> DB
-  Worker --> Audit
-  Orchestrator -. optional .-> Models[Gemini Claude or OpenAI API]
-  Worker -. derived alerts .-> Firestore[(Firestore notification projection)]
-  Firestore -. delivery fallback .-> Insights
+flowchart TD
+  Browser["Customer / analyst browser"] --> Hosting["Firebase Hosting"]
+  Hosting --> Web["Next.js · Cloud Run"]
+  Web --> API["FastAPI · Cloud Run"]
+  API --> Store["Firestore · authoritative state"]
+  API --> Model["Optional AI provider"]
+  Schedule["Cloud Scheduler"] --> Worker["Finite Cloud Run worker job"]
+  Worker --> Store
 ```
 
-## Execution modes
+## Domain storage
 
-Local mode runs the customer and analyst workflow with deterministic tools and rule explanations and requires no API key. Gemini, Claude, OpenAI and OpenRouter modes supplement assistant tool orchestration and document-answer synthesis; only Gemini, Claude and OpenAI support optional evidence-quality assessment. The selected model cannot change banking authorization, credit eligibility or settlement rules. The UI, health endpoint and analyst Integrations page identify effective modes and credential presence without returning secrets. Tool output and document text are untrusted data and do not authorize actions.
+`models.py` contains plain domain records; `query.py` describes Python predicates
+and aggregates. Neither imports SQLAlchemy. `db.py` is the Firestore repository
+and unit of work. A separate explicit in-memory adapter supports disposable
+local demonstrations. Hosted configuration refuses memory or an emulator.
+Legacy SQL models/migrations are only used by the read-only import tooling and
+are absent from the production dependency lock.
 
-The backend reads a supported-variable allowlist from the project-root `.env`; already injected values take precedence. Auto mode prefers Claude, then OpenAI, then OpenRouter, then Gemini when multiple keys exist. Explicit provider/model settings are supported. Claude uses the Messages API; OpenAI uses the Responses API with response storage disabled; Gemini uses Google's native `generateContent` function-calling API; OpenRouter uses its OpenAI-compatible chat completions API and may route to third-party models. Model discovery uses provider metadata endpoints where supported. A successful metadata check proves model access only. Inference still depends on provider account permissions, quota, network access and compatible models; failures are explicit rather than replaced with a fabricated success.
+Each application collection keeps its original table name and each record its
+original ID, preserving references through migration. Dates are stored as ISO
+dates and decoded to Python dates; timestamps are timezone-aware. Money stays
+signed 64-bit integer paise, with decimal strings at the API boundary.
 
-The assistant reads a customer-scoped financial snapshot and can propose a transfer. The customer confirms it through the same transfer API used by the payment screen. It cannot directly move money through generated text. Financial mutations, account freezes, KYC rejection and analyst overrides remain server-governed operations. Audits store concise decision summaries and tool names, never hidden chain-of-thought or passwords.
+## Atomic commit protocol
 
-## Persistence and money
+All point reads and queries observe a collection revision before fetching data.
+Writes are staged locally. A native Firestore atomic Commit writes all changed
+records together with hashed unique reservations and revision documents.
+Last-update-time/create preconditions validate both write versions and every
+observed collection revision. A conflict aborts the whole commit. This prevents
+lost updates, duplicate unique values and query phantoms. Local business routes
+restart with a fresh unit of work after bounded conflicts. External model calls
+are not automatically repeated by this route retry.
 
-Amounts use integer paise in persistence and decimal INR strings at the API boundary. A transfer settles only after sufficient funds, account status, ownership, current risk and consent checks. Idempotency prevents a retried request from settling again. Step-up and analyst decisions revalidate the current account before execution. A held transfer has not moved funds. Synthetic transaction history provides useful charts and anomaly baselines; newly registered users have zero balances.
+Transfers commit the customer debit, clearing credit, paired ledger entries,
+transfer status, beneficiary update, audit evidence and queued follow-up job
+atomically. Unique reservations cover email, account identity, idempotency keys,
+ledger transfer/account pairs, jobs, insights and schedules. Conditional status
+checks and latest balances protect analyst approvals and password challenges.
+Ledger and audit records are append-only through the repository; direct client
+writes are denied by Firestore rules. Privileged server/project administrators
+can bypass client rules, so these guards are not an immutable external archive.
 
-SQLite is the zero-infrastructure development path. PostgreSQL is the deployment path and should be used for concurrent workloads, managed backups and recovery. Running processes are disposable; sessions, ledger data, documents, cases and audit records survive server restarts through the database.
+The current protocol uses collection-wide revisions. It deliberately favors
+correctness and a simple verified prototype over high write throughput. Queries
+push a tenant/equality filter to Firestore and evaluate remaining predicates,
+ordering and exact aggregates over the full matching scope. Large tenant
+histories, global analyst views and hot revision documents need partitioned
+revision guards, maintained aggregate projections and load testing before large
+scale use. An upload is limited to 300 chunks to fit a bounded atomic commit.
+There are no truncated samples masquerading as full monthly financial totals.
 
-## Proactive workflows and planning goals
+## Durable agents and schedules
 
-Login and customer activity stage financial-health jobs in the same database transaction as the event. Event keys deduplicate repeated work, stale dashboard reads reuse recent reviews and manual refresh starts a new review once prior work completes. The API lifecycle starts an in-process polling worker; database-backed runs survive process restarts.
+Login, transfer and goal events stage review jobs in their business transaction.
+A claim commits a lease and fencing token before execution. Only one active job
+per customer is allowed. Output, insights and completion are committed together;
+a stale token or expired lease cannot publish completion. Failed executions roll
+back output and retry with bounded backoff. Expired final attempts become failed.
 
-Atomic claims assign lease tokens and bounded attempts. PostgreSQL skips locked work and serializes jobs for one customer. A worker commits its claim before processing, then commits insights and run completion atomically behind the current lease token. Failed work rolls back proposed outputs, retries with a bounded delay and eventually becomes failed. Expired leases recover; an old token cannot publish completion. Multiple API workers share the queue without requiring a separate broker.
+Customers can enable, pause and run financial health, security review, document
+readiness and savings coaching schedules. A schedule's due timestamp and its
+outbox job advance together; competing dispatchers cannot queue it twice. Each
+workflow reads only its customer's records, emits guidance and records tools and
+decision summaries. It cannot settle payments, modify a budget or approve KYC.
+Savings progress remains a planning record, not reserved bank funds.
 
-When `FIRESTORE_AGENT_NOTIFICATIONS=true`, a successful SQL commit is followed by a best-effort Firestore projection of derived customer insights. Customer path segments are HMAC-derived, only the owning authenticated customer can retrieve the matching projection through the API, and Firestore client rules deny direct client access. A Firestore outage cannot roll back a financial workflow; the API falls back to SQL. Cloud Run metadata-server identity tokens are used instead of service-account key files.
+Cloud Scheduler invokes a finite worker job every five minutes with a service
+identity. This supplies recovery independently of API CPU allocation or scale to
+zero. Manual review endpoints also attach a bounded response background task.
+The development polling thread can be enabled explicitly.
 
-The worker invokes an allowlist of customer-scoped read tools and produces budget, recurring-charge, cash-flow, buffer, goal, affordability and identity guidance. It makes no model request for every event. Financial totals and budget usage cover the complete posted ledger for the last 30 days. Recurring detection examines at most 10,000 entries over 120 days and labels forecasts as estimates. Run records expose tool names, concise decisions, retry state and trace IDs. They contain no hidden model reasoning.
+## Authentication and AI boundaries
 
-Savings goals store integer-paise targets and manually entered saved amounts, optional deadlines and status. Suggested monthly contributions compare all active goals against historical cash-flow surplus. A goal creates no ledger entry, holds no balance and reserves no funds. The worker cannot transfer money, modify budgets, approve identity, freeze accounts or release a case; its output remains guidance requiring customer or analyst action.
+Argon2 hashes protect passwords. Opaque expiring server sessions use a Secure,
+HttpOnly `__session` cookie on hosted environments; Firebase forwards this name.
+Mutation requests require an allowed Origin and the session's CSRF token. Public
+registration always creates a customer with zero balance; analysts require
+operator provisioning. Role and tenant checks apply before document retrieval,
+payment execution or model tool access.
 
-## Identity and documents
+Gemini/Claude/OpenAI/OpenRouter are optional server-side adapters. Tool registries
+allow only scoped calls; payment proposals still need the customer's separate
+confirmation. Document answers cite retrieved evidence. OpenRouter does not
+perform image KYC. Synthetic identity, sanctions, bureau, settlement and device
+adapters remain labelled as such; model access does not replace them.
 
-Demo KYC uses submitted structured fields, ID/selfie uploads and a synthetic sanctions list. This is visibly labelled; it is not proof of identity, liveness or an authoritative sanctions check. Optional Gemini/Claude/OpenAI vision sends the submitted document and selfie to the selected provider for readability, apparent portrait/person presence and transient printed-name extraction; OpenRouter is not used for KYC. Uploaded evidence can contain private identity information; operators must configure appropriate consent, retention and provider data handling before real use. The extracted name is compared in memory, and the image/provider response is not persisted by this assessment. Structured KYC submissions and evidence hashes remain application records. Passwords, API keys and identity-number fields are excluded from assistant context and audit summaries. Identity/liveness, sanctions and bureau services still require their own integrations.
+## Operations
 
-Document retrieval is local and citation-based. PDF/text/Markdown/CSV uploads are extracted into bounded source chunks, filtered by customer ownership plus shared policy visibility. Optional model synthesis receives bounded redacted excerpts; citations remain server-authored and references outside the retrieved set are rejected. Source previews expose the stored passages to their authorized reader. Authenticated analysts can publish shared policies with explicit confirmation that all customers may read them. Policy publication changes available Q&A evidence, never executable lending or payment rules. Scanned PDF OCR, multilingual speech, learned fraud models, live GeoIP, real payments and regulatory reporting remain extensions.
-
-## Deployment boundary
-
-The deployment script uses Firebase Hosting rewrites to Cloud Run for the public HTTPS/CDN origin; Cloud Run hosts the web and API containers, with Cloud SQL PostgreSQL for transactional state and Firestore as an optional alert projection. Use Secret Manager for the session secret, database URL and model keys. Grant the dedicated Cloud Run identity Cloud SQL Client, Secret Manager Secret Accessor and Datastore User. Run the controlled migration job before API startup or replica scaling. Direct client Firestore access is denied; Cloud Run uses metadata-server credentials and no service-account JSON. Restore backups in staging before relying on them, collect metrics centrally and protect the audit store from privileged database alteration. Append-only database triggers do not protect evidence from a database owner who can alter those guards.
-
-The development threat model includes hostile API clients, cross-customer requests, repeated payments, forged model actions, cross-site requests, malformed document uploads and unauthorized analyst actions. It does not make the demo adapters authoritative bank integrations or guarantee regulatory approval.
+Firebase Hosting fronts two Cloud Run containers with explicit ports. Secret
+Manager supplies `AGIES_SECRET` and optional provider keys. A schema validation
+job runs before a fresh rollout; it checks references, uniqueness and ledger
+reconciliation. Firestore client rules deny all access. Runtime, build and
+scheduler identities have separate roles. Backups, restoration tests and a
+privileged audit archive remain deployment/operator responsibilities.

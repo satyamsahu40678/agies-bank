@@ -18,7 +18,7 @@ def test_versioned_schema_migration_repeatability_and_immutability(tmp_path):
     }
     for _ in range(2):
         result = subprocess.run(
-            [sys.executable, "-m", "app.manage", "migrate"],
+            [sys.executable, "-m", "app.manage", "migrate-legacy-sql"],
             env=env,
             cwd=ROOT,
             capture_output=True,
@@ -49,7 +49,7 @@ def test_versioned_schema_migration_repeatability_and_immutability(tmp_path):
     [
         {"AGIES_SECRET": "short"},
         {"AEGIS_DEMO_ENABLED": "true"},
-        {"DATABASE_URL": "sqlite:///bad.db"},
+        {"AEGIS_STORAGE_BACKEND": "memory"},
         {"AEGIS_ALLOWED_ORIGINS": "http://localhost:3000"},
     ],
 )
@@ -58,7 +58,9 @@ def test_production_configuration_fails_closed(updates):
         **os.environ,
         "PYTHONPATH": str(ROOT),
         "AEGIS_ENV": "production",
-        "DATABASE_URL": "postgresql+psycopg://synthetic:unused@localhost/aegis",
+        "AEGIS_STORAGE_BACKEND": "firestore",
+        "GOOGLE_CLOUD_PROJECT": "synthetic-project",
+        "FIRESTORE_EMULATOR_HOST": "",
         "AGIES_SECRET": "a" * 40,
         "AEGIS_ALLOWED_ORIGINS": "https://aegis.example",
         "AEGIS_DEMO_ENABLED": "false",
@@ -78,35 +80,30 @@ def test_production_configuration_fails_closed(updates):
     assert result.returncode != 0
 
 
-def _production_lifespan(monkeypatch, engine, factory):
+def _production_lifespan(monkeypatch, factory):
     from app import main
-    from sqlalchemy import text
+    from app.maintenance import initialize_store
 
-    monkeypatch.setattr(main, "engine", engine)
+    initialize_store(factory)
     monkeypatch.setattr(main, "SessionLocal", factory)
+    monkeypatch.setattr(main.config, "ENV", "production")
     monkeypatch.setattr(main.config, "PRODUCTION", True)
     monkeypatch.setattr(main.config, "DEMO_ENABLED", False)
     monkeypatch.setattr(main.config, "validate_configuration", lambda: None)
-    with engine.begin() as conn:
-        conn.execute(
-            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
-        )
-        conn.execute(text("INSERT INTO alembic_version VALUES ('0002_proactive')"))
     return main.app
 
 
 def test_production_refuses_existing_demo_database_without_deleting_records(
     monkeypatch, db_factory
 ):
-    from sqlalchemy import select, func
+    from app.query import select, func
     from app.models import User, LedgerEntry
     from fastapi.testclient import TestClient
 
-    engine = db_factory.kw["bind"]
     with db_factory() as db:
         users_before = db.scalar(select(func.count()).select_from(User))
         ledger_before = db.scalar(select(func.count()).select_from(LedgerEntry))
-    app = _production_lifespan(monkeypatch, engine, db_factory)
+    app = _production_lifespan(monkeypatch, db_factory)
     with pytest.raises(RuntimeError, match="contains synthetic demo identities"):
         with TestClient(app):
             pass
@@ -115,29 +112,20 @@ def test_production_refuses_existing_demo_database_without_deleting_records(
         assert db.scalar(select(func.count()).select_from(LedgerEntry)) == ledger_before
 
 
-def test_production_clean_migrated_database_initializes_without_demo_users(
-    monkeypatch, tmp_path
-):
-    from sqlalchemy import create_engine, select, func
-    from sqlalchemy.orm import sessionmaker
-    from app.db import Base
+def test_production_clean_migrated_database_initializes_without_demo_users(monkeypatch):
+    from app.query import select, func
+    from app.db import SessionFactory, MemoryBackend
     from app.models import Account, User, Document
     from fastapi.testclient import TestClient
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'production-guard.db'}",
-        connect_args={"check_same_thread": False},
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
-    app = _production_lifespan(monkeypatch, engine, factory)
+    factory = SessionFactory(MemoryBackend())
+    app = _production_lifespan(monkeypatch, factory)
     with TestClient(app):
         pass
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(User)) == 0
         assert db.scalar(select(func.count()).select_from(Document)) == 0
         assert db.scalar(select(Account)).number == "INTERNAL_CLEARING"
-    engine.dispose()
 
 
 def test_demo_email_registration_is_reserved_when_demo_disabled(monkeypatch, client):

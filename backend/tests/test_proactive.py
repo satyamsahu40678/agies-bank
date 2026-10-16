@@ -4,7 +4,7 @@ import time
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select, update
+from app.query import func, select, update
 
 from app.models import (
     Account,
@@ -646,21 +646,16 @@ def test_financial_totals_are_complete_even_when_recurring_history_is_capped(
         account = db.scalar(select(Account).where(Account.user_id == user.id))
         now = utcnow()
         # A high-volume account places salary and housing beyond the recurring-history sample.
-        db.execute(
-            LedgerEntry.__table__.insert(),
-            [
-                {
-                    "account_id": account.id,
-                    "amount_paise": 1,
-                    "direction": "debit",
-                    "description": "Daily small debit",
-                    "category": "other",
-                    "balance_after_paise": account.balance_paise,
-                    "created_at": now - timedelta(hours=2),
-                }
-                for _ in range(10000)
-            ],
-        )
+        # Seed high-volume history in bounded native Firestore transactions.
+        # This fixture deliberately bypasses balance reconciliation; it tests exact totals.
+        for start in range(0, 10000, 250):
+            batch = {}
+            for _ in range(start, start + 250):
+                entry = LedgerEntry(account_id=account.id, amount_paise=1,
+                    direction="debit", description="Daily small debit", category="other",
+                    balance_after_paise=account.balance_paise, created_at=now - timedelta(hours=2))
+                batch["ledger_entries/" + entry.id] = entry.to_dict()
+            db.backend.commit({}, batch)
         db.add(
             LedgerEntry(
                 account_id=account.id,

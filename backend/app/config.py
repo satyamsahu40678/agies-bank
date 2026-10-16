@@ -28,6 +28,10 @@ DOTENV_VARIABLES = frozenset(
         "FIRESTORE_DATABASE",
         "FIRESTORE_AGENT_NOTIFICATIONS",
         "DATABASE_URL",
+        "AEGIS_STORAGE_BACKEND",
+        "FIRESTORE_EMULATOR_HOST",
+        "AEGIS_WORKER_ENABLED",
+        "AEGIS_SCHEDULER_TOKEN",
     }
 )
 
@@ -143,7 +147,7 @@ def resolve_kyc_mode() -> str:
 
 
 ENV = os.getenv("AEGIS_ENV", "development")
-PRODUCTION = ENV == "production"
+PRODUCTION = ENV in {"production", "demo"}
 DEMO_ENABLED = (
     os.getenv("AEGIS_DEMO_ENABLED", "false" if PRODUCTION else "true").lower() == "true"
 )
@@ -168,8 +172,13 @@ KYC_MODE = resolve_kyc_mode()
 
 
 def validate_configuration():
-    if ENV not in {"development", "test", "production"}:
-        raise RuntimeError("AEGIS_ENV must be development, test or production")
+    if ENV not in {"development", "test", "production", "demo"}:
+        raise RuntimeError("AEGIS_ENV must be development, test, demo or production")
+    storage = os.getenv("AEGIS_STORAGE_BACKEND", "firestore")
+    if storage not in {"firestore", "memory"}:
+        raise RuntimeError("AEGIS_STORAGE_BACKEND must be firestore or memory")
+    if storage == "firestore" and not os.getenv("GOOGLE_CLOUD_PROJECT", "").strip():
+        raise RuntimeError("Firestore requires GOOGLE_CLOUD_PROJECT")
     if (
         resolve_ai_mode() == "claude" or resolve_kyc_mode() == "claude"
     ) and not os.getenv("ANTHROPIC_API_KEY", "").strip():
@@ -193,7 +202,7 @@ def validate_configuration():
             "Firestore agent notifications require GOOGLE_CLOUD_PROJECT"
         )
     if PRODUCTION:
-        if DEMO_ENABLED:
+        if DEMO_ENABLED and ENV == "production":
             raise RuntimeError("Demo data and simulator must be disabled in production")
         if (
             len(SECRET) < 32
@@ -204,8 +213,8 @@ def validate_configuration():
             raise RuntimeError(
                 "Production requires a strong AGIES_SECRET of at least 32 characters"
             )
-        if not DATABASE_URL.startswith("postgresql"):
-            raise RuntimeError("Production requires PostgreSQL DATABASE_URL")
+        if storage != "firestore" or os.getenv("FIRESTORE_EMULATOR_HOST"):
+            raise RuntimeError("Hosted environments require live Firestore, never memory or the emulator")
         if not ALLOWED_ORIGINS or any(
             not x.startswith("https://") or "*" in x for x in ALLOWED_ORIGINS
         ):

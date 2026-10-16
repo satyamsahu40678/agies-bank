@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from ..query import select
 
 from ..config import SECRET
 from ..models import AgentRun, FinancialInsight

@@ -1,52 +1,76 @@
-# Validation evidence
+# Verification evidence
 
-The implemented scope is in REQUIREMENTS.md. The uploaded deck was available; the linked conversation could not be retrieved. The user authorized implementation decisions based on the available material.
+This revision was verified with synthetic records and local provider mode.
+The authoritative-storage tests use the actual official Firestore emulator,
+not a SQL database disguised as Firestore.
 
-## Executed checks
+| Check | Executed outcome |
+| --- | --- |
+| Complete backend suite, explicit memory adapter | 147 passed |
+| Complete backend suite, actual Firestore emulator | 147 passed |
+| Independent real-HTTP security acceptance on Firestore emulator | 11 passed |
+| Production Next.js build and TypeScript validation | Passed, including Automations and analyst Operations |
+| Chromium browser journeys against production Next.js + Firestore emulator | 16 passed, including mobile navigation, schedules, ledger results, KYC, document citations and analyst controls |
+| Fresh installation of the production-only hash lock | Passed; complete app imports and configuration validates without SQLAlchemy installed |
+| Runtime Python dependency audit | No known vulnerabilities reported |
+| npm dependency audit | 0 vulnerabilities reported |
+| New datastore/workflow source lint, Python/JSON syntax, shell syntax and whitespace | Passed |
+| SQLite export → native Firestore domain → schema initialization → ledger reconciliation | Passed against the emulator, with the source hash unchanged |
+| Live Google Cloud credential and project read | Authenticated to `agies-bank`; default Firestore database exists |
+| Live public rollout and hosted smoke check | Pending external API/IAM/Secret Manager prerequisites; no verified public URL yet |
+| Docker image builds / Compose execution | Not run here: no Docker engine available |
+| Live model inference | Not run; provider protocols and scope boundaries are mocked |
 
-| Check | Outcome | Evidence and scope |
-| --- | --- | --- |
-| Backend suite | 129 passed (re-run 2026-10-16) | `backend/.venv/bin/python -m pytest backend/tests -q`: auth, sessions, roles, ledger conservation, atomic settlement, risk/geo events, KYC, documents, agent tools, recommendations, analyst actions, immutable evidence and production guards; Gemini/Claude/OpenAI/OpenRouter protocol handling, OpenRouter tool execution and catalog checks, read-only Firestore import/conflict handling, model discovery, complete financial aggregation, integration disclosures, shared policy publication and proactive workflows |
-| SQLite-to-Firestore dry run | Passed; 99 rows across 19 application collections | `cd backend && .venv/bin/python -m app.firestore_migration`: read-only inspection of the retained SQLite database; no Firestore credentials or remote writes used |
-| Independent HTTP security | 11 passed | `backend/.venv/bin/python -m unittest discover -s tests/acceptance -v`: starts a real API process on an isolated SQLite database, checks CSRF, tenant boundaries, upload limits, role injection, four concurrent identical payments, concurrent analyst approvals, logout replay and step-up risk escalation |
-| Browser journeys | 14 passed | Real Chromium against built Next.js/FastAPI containers with PostgreSQL on a fresh disposable synthetic database. Customer payments; new beneficiary and step-up; document upload/citations; registration and KYC; repayment calculator; fraud hold and analyst rejection; assistant tools/citations/payment consent; budgets and analyst freeze/unfreeze/audit; mobile layout; goal create/edit/complete/delete without balance changes; completed run tools/trace/decisions and dismissal; public-sharing consent, customer policy citations and source preview; both provider checks; mobile Financial health/Integrations navigation |
-| Production frontend | Passed | TypeScript validation and Next.js production builds completed, including standalone assets and self-hosted fonts |
-| Production web launcher | Passed | Frontend startup helper served login, all referenced JS/CSS assets and API proxy requests; forwards shutdown signals |
-| Docker API/web builds | Passed | Both images built with locked dependencies; cloud proxy routing and supplied CA secret preserved TLS/checksum verification |
-| PostgreSQL | Passed | PostgreSQL17 migrations, authenticated requests, double-entry settlement and idempotency; current `0002_proactive` schema head; all three Compose services reported healthy on the disposable validation stack |
-| Proactive workflows | 24 passed | `backend/.venv/bin/pytest backend/tests/test_proactive.py -q`: scoped goals and insights, HTTP auth/role/CSRF and tenant isolation, background completion, dismissal, event deduplication, concurrent claims, lease recovery, rollback, bounded retries and interruptible shutdown; complete cash-flow/budget totals verified with 10,000 additional ledger entries |
-| PostgreSQL durable workers | Passed | Repeated migrations reach `0002_proactive`; Alembic metadata comparison has no differences. Four concurrent independent clients claim only one run for one customer. An expired lease recovers on attempt two; the old token is rejected. Concurrent workers complete jobs, three injected failures terminate within the retry bound, and an explicit retry succeeds. All 14 seeded ledger entries and all account balances remain unchanged |
-| Schema/immutability | Passed | SQLite migration repeated successfully; PostgreSQL migration verified; backend regression suite exercises append-only ledger/audit guards |
-| Python dependency audit | Passed | pip-audit checked the complete pinned lock: no known vulnerabilities reported |
-| Frontend dependency audit | Passed | npm audit reported zero known vulnerabilities after patched Next/React and transitive dependency updates |
-| Installation repeatability | Passed | `bash scripts/setup.sh` synced hash-pinned Python dependencies and ran npm ci successfully |
-| Cross-platform local launcher | Passed on Linux | `python3 scripts/run-local.py --setup` installed locked dependencies, started alternate ports with explicit origins, served web-proxied login/overview/insights/logout, and stopped both service groups on SIGTERM. Invalid/equal ports and mismatched explicit origins produce actionable errors. Windows/macOS execution was not performed |
-| Native cloud startup | Passed | `bash scripts/dev.sh` reached database/web readiness; authenticated clean demo overview had INR225,480.50, three source documents and three loan recommendations; logout worked |
-| Startup collision | Passed | Launcher refused occupied ports and preserved the running app instead of reporting another server as its newly started process |
-| Repository hygiene | Passed | git diff --check; credentials, databases, dependencies, build outputs, reports and logs ignored; no pre-existing application files overwritten |
+One existing Starlette/httpx deprecation warning remains. The isolated developer
+venv initially carried stale dependency metadata; a fresh production-lock
+installation passed its dependency compatibility check. That installation also
+proved the live application does not need a relational package or engine.
 
-Native development startup has been verified. Prior generated SQLite test state is preserved under ignored `backend/data/onboarding-test-backup`; disposable PostgreSQL test data is retained in its Docker volume. Runtime availability should be checked through health and an authenticated request; live processes are not assumed to survive cloud publication/restoration.
+## Correctness exercised
 
-Browser journeys deliberately change banking and security state and require a fresh synthetic database. CI starts with an empty database. Retained suspicious events correctly change later risk decisions; a password challenge must not override them merely to make a repeat test pass.
+Payments conserve customer/clearing balances, write matching ledger entries,
+reject invalid minor-unit amounts and overdrafts, deduplicate concurrent requests,
+recheck balances during analyst approval, and preserve held state on failure.
+Authentication covers hashing, expiry, revocation, CSRF, role checks and tenant
+isolation. The canonical cookie is `__session`, matching Firebase Hosting's
+forwarding behavior.
 
-## Diagnosed failures and limits
+Firestore tests cover stale writes, query phantoms, unique reservations,
+append-only ledger/audit enforcement, required references, signed integer fields,
+goal date round trips, schema initialization, and complete financial totals beyond
+history sampling caps. Legacy rows are read through the new domain repository
+and reconcile after import; the SQLite bytes remain unchanged.
 
-- Security review found a step-up escalation bypass. The API now reassesses current risk before settlement and creates a held analyst case when new high risk appears; independent HTTP and backend regression checks pass.
-- Production startup now refuses public demo identities in an existing database without deleting records. Registration reserves the demo domain when demo is disabled. Clean production initialization is covered by tests.
-- Package audits initially identified vulnerable Next.js/transitive versions; patched versions were installed and audits passed.
-- Browser CDN downloads were blocked by network policy. The installed Debian Chromium was used successfully; no verification checks were disabled.
-- Initial container builders lacked proxy DNS/CA routing. The build helper uses the configured proxy and ephemeral CA mount; final images built successfully with TLS and hash checks intact.
-- PostgreSQL browser validation exposed a test timing assumption: the first payment assertion could read history before its POST finished. The test now waits for the settlement response, checks posted status and verifies the exact balance change.
-- One Starlette TestClient/httpx deprecation warning remains in the test suite. It is not a failing test and does not affect the production API or provider HTTP client.
-- Gemini, Claude, OpenAI and OpenRouter assistant/tool and cited-document adapters are implemented; only Gemini, Claude and OpenAI support KYC-vision assessment. Provider protocol tests use mocks for denied tools, malformed responses, context minimization, citation bounds, model discovery, OpenRouter catalog access and scoped tool execution. No live model request or authenticated Firebase/Google Cloud request was made from this workspace, so paid inference, provider-account compatibility and remote Firestore deployment are not claimed as verified.
-- Core-bank settlement, KYC/sanctions, bureau, GeoIP/device intelligence and password step-up are explicit synthetic adapters. Real providers, identity/liveness, payments, production MFA and regulated deployment controls require integration and operational review.
-- Local retrieval uses lexical evidence ranking and exact citations, not production vector embeddings. Scanned-PDF OCR, voice/multilingual assistance and regulatory reporting are deck next steps, not implemented live provider capabilities.
-- A fresh production database contains no sample shared policies. Private customer uploads work, and authenticated analysts can publish shared bank policies through Integrations after explicit public-sharing confirmation. Published text is Q&A evidence; it cannot change payment or lending authorization rules.
-- Goals are manual planning records rather than reserved funds. Agent jobs make read-only proposals; tests verify that neither goals nor proactive reviews change balances or ledger entries. Financial totals use complete SQL aggregates, while recurring detection is explicitly limited to 10,000 entries over 120 days and represents estimates.
-- GitHub CI workflow is provided; remote CI results and public deployment must be established separately. Cloud configuration drafts were saved; publication and restoration in a new task remain user/platform actions and were not validated here.
+Worker tests cover atomic event outbox creation, competing claims and schedule
+dispatchers, per-customer exclusion, crash/lease recovery, fencing old workers,
+rollback of failed output, retry bounds and unchanged balances. Specialized
+reviews cannot replace the financial-health summary. Paused schedules do not
+dispatch and foreign schedule IDs are inaccessible.
 
-## Final delivery evidence (2026-10-14)
+The browser run found an initial-render race on Refresh insights: an enabled
+server-rendered button could be clicked before its handler was hydrated. It is
+now disabled until the initial insight and job resources load. Provider UI checks
+were updated to the current four-provider interface. All sixteen final journeys
+passed after these corrections.
 
-The current backend suite passed 129 tests on 2026-10-16; the isolated real-HTTP suite previously passed 11 tests. Fourteen browser journeys passed against the production Next.js output with SQLite; all fourteen also passed against the final Docker web/API images on a separately migrated PostgreSQL database. Docker API/web images and the native production frontend built successfully. Current pip-audit and npm audit reported no known vulnerabilities in the pinned dependencies.
+## Repeat the checks
 
-Test results validate the implemented simulated banking scope and the offline migration foundation. The full Firestore-backed runtime and import into the remote project remain unverified; no live Gemini/Claude/OpenAI/OpenRouter inference, authenticated Firebase deployment, authoritative identity provider, real settlement service, public hosting account or remote CI outcome was verified. Cross-platform launcher logic is provided; only Linux execution was tested. Local processes do not constitute a publicly deployed app.
+```bash
+make setup
+make check
+make test-firestore
+backend/.venv/bin/python -m unittest discover -s tests/acceptance -v
+# Start a fresh disposable demo API/web stack before browser tests:
+npm run test:e2e --prefix frontend
+```
+
+The emulator script starts an official hash-verified jar and isolates each test's
+project. It never uses the attached live credential. HTTP/browser runs must start
+with a fresh synthetic fixture because they intentionally create fraud evidence
+and change demo state. Existing risk evidence must not be removed to force an
+unsafe repeat payment to pass.
+
+Live IAM, billing, enabled secret versions, Cloud Build image creation, Firebase
+cookie forwarding and Cloud Scheduler invocation still require a real rollout.
+The deployment script includes those checks and a hosted demo smoke test. This
+file records local/emulator evidence separately from that external work.

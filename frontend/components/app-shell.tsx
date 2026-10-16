@@ -28,6 +28,13 @@ import { useResource } from "@/lib/api";
 import { Modal } from "./ui";
 const customerNav = [
   {
+    href: "/automations",
+    label: "Automations",
+    icon: Bot,
+    group: "AGENT WORKSPACE",
+    description: "Scheduled reviews, security watch and savings coaching",
+  },
+  {
     href: "/dashboard",
     label: "Overview",
     icon: LayoutDashboard,
@@ -86,6 +93,12 @@ const customerNav = [
   },
 ];
 const analystNav = [
+  {
+    href: "/analyst/operations",
+    label: "Operations",
+    icon: Activity,
+    description: "Ledger reconciliation and durable job health",
+  },
   {
     href: "/analyst",
     label: "Overview",

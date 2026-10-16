@@ -24,7 +24,7 @@ from uuid import uuid4
 import httpx
 from fastapi import HTTPException
 from pypdf import PdfReader
-from sqlalchemy import func, or_, select
+from ..query import func, or_, select
 
 from .. import config
 from ..models import (

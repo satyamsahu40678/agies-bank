@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 from app.main import app
+import httpx
+from app.services import providers
 
 
 def test_shared_policy_publication_requires_analyst_and_explicit_sharing(
@@ -126,7 +128,9 @@ def test_openrouter_connection_check_is_analyst_only_and_secret_safe(
     assert result.status_code == 200
     assert result.json()["status"] == "ok"
     assert secret not in result.text
-    assert customer.post("/api/analyst/integrations/openrouter/check").status_code == 403
+    assert (
+        customer.post("/api/analyst/integrations/openrouter/check").status_code == 403
+    )
     assert analyst.get("/api/analyst/integrations/openrouter/check").status_code == 405
 
 
@@ -146,6 +150,21 @@ def test_gemini_provider_metadata_and_connection_check_are_secret_safe(
     assert gemini["credential_configured"] is True
     assert gemini["status"] == "configured"
     assert secret not in metadata.text
+    # No test should send synthetic credentials to a live provider.
+    original_client = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: original_client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    401, json={"error": {"message": "Invalid credential"}}
+                )
+            ),
+            trust_env=False,
+            **kwargs,
+        ),
+    )
     checked = analyst.post("/api/analyst/integrations/gemini/check")
     assert checked.status_code == 200
     assert checked.json()["status"] == "error"
@@ -164,7 +183,7 @@ def test_agent_notification_feed_is_customer_scoped_and_uses_sql_when_firestore_
 
 
 def test_budget_api_combines_category_variants(customer, db_factory):
-    from sqlalchemy import select
+    from app.query import select
     from app.models import Account, LedgerEntry, User
 
     with db_factory() as db:

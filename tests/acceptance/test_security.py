@@ -30,7 +30,7 @@ class SecurityAcceptance(unittest.TestCase):
         cls.process = subprocess.Popen(
             [str(ROOT / 'backend/.venv/bin/python'), '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', str(port)],
             cwd=ROOT / 'backend', stdout=cls.log, stderr=cls.log,
-            env={**os.environ, 'DATABASE_URL': f'sqlite:///{cls.tmp.name}/test.db', 'AEGIS_ENV': 'test', 'AEGIS_DEMO_ENABLED': 'true', 'AEGIS_AI_PROVIDER': 'local', 'AEGIS_AI_MODE': 'local', 'AEGIS_KYC_VISION': 'local'},
+            env={**os.environ, 'AEGIS_STORAGE_BACKEND': os.environ.get('AEGIS_ACCEPTANCE_STORAGE', 'memory'), 'GOOGLE_CLOUD_PROJECT': 'demo-acceptance-' + uuid.uuid4().hex[:10], 'AEGIS_ENV': 'test', 'AEGIS_DEMO_ENABLED': 'true', 'AEGIS_AI_PROVIDER': 'local', 'AEGIS_AI_MODE': 'local', 'AEGIS_KYC_VISION': 'local'},
         )
         try:
             for _ in range(100):
@@ -205,7 +205,7 @@ class SecurityAcceptance(unittest.TestCase):
         result = subprocess.run(
             [str(ROOT / 'backend/.venv/bin/python'), '-c', 'from app.config import validate_configuration; validate_configuration()'],
             cwd=ROOT / 'backend', capture_output=True, text=True,
-            env={**os.environ, 'AEGIS_ENV': 'production', 'AEGIS_DEMO_ENABLED': 'true', 'AEGIS_AI_MODE': 'local'},
+            env={**os.environ, 'AEGIS_ENV': 'production', 'GOOGLE_CLOUD_PROJECT': 'demo-validation-only', 'AEGIS_DEMO_ENABLED': 'true', 'AEGIS_AI_MODE': 'local'},
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Demo', result.stderr)

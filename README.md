@@ -1,6 +1,6 @@
 # AegisBank
 
-A runnable, governed agentic banking application with customer and analyst workspaces, configurable **Gemini, Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
+A runnable, governed agentic banking application with customer and analyst workspaces, configurable **OpenRouter, Gemini, Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
 
 Banking, identity/sanctions, bureau and geo/device providers use explicit synthetic adapters, as requested. No real money moves. AI keys enable the implemented model-assisted capabilities; they do not establish a real bank or legal identity-provider connection.
 
@@ -11,7 +11,7 @@ Banking, identity/sanctions, bureau and geo/device providers use explicit synthe
 Install **Python 3.12+** and **Node.js 24 LTS** (includes npm). Then:
 
 ```bash
-git clone --branch feat/aegisbank-complete https://github.com/satyamsahu40678/agies-bank.git
+git clone --branch feat/deployment-and-enhance https://github.com/satyamsahu40678/agies-bank.git
 cd agies-bank
 python scripts/run-local.py --setup --open
 ```
@@ -27,7 +27,7 @@ make setup
 make dev
 ```
 
-For Docker Desktop/PostgreSQL, copy `.env.example` to `.env`, generate distinct random `POSTGRES_PASSWORD` and `AGIES_SECRET`, then run `docker compose up --build -d`. See [operations](docs/OPERATIONS.md) for proxy-aware builds and production requirements.
+Local launchers use disposable in-memory data by default. For persistent local data, use the Firestore emulator with `docker compose up --build -d`, or configure a Firestore development project. Hosted mode always requires Firestore. See [operations](docs/OPERATIONS.md).
 
 ## Add Gemini, Claude, OpenAI or OpenRouter
 
@@ -54,21 +54,15 @@ The analyst **Integrations** page shows implemented adapters, effective modes an
 
 ## Google Cloud deployment
 
-The Google stack is wired as follows: Gemini provides model-assisted tool routing and source-grounded answers; Firestore optionally carries a server-side projection of derived agent alerts; PostgreSQL/Cloud SQL remains authoritative for accounts, balances, transfers, audit, and job state; Cloud Run hosts the API and Next.js app; Firebase Hosting supplies the public HTTPS/CDN URL and rewrites traffic to Cloud Run. Cloud Run accesses Firestore through its service identity. No service-account JSON key is required or accepted by the deployment script.
-
-After creating Cloud SQL, a Firestore Native database, a dedicated Cloud Run service account and Secret Manager secrets named `DATABASE_URL` and `AGIES_SECRET` (optionally `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `AEGIS_OPENAI_API_KEY` or `OPENROUTER_API_KEY`), grant that service account Cloud SQL Client, Secret Manager Secret Accessor and Datastore User. `DATABASE_URL` must use the Cloud SQL Unix socket path. Then run from Cloud Shell with `gcloud`, Docker build services and authenticated Firebase CLI configured:
+Firestore is authoritative for all application data. Cloud Run hosts the API and Next.js; Firebase Hosting provides the public HTTPS entry point. Cloud Scheduler runs durable review jobs independently of the API. The production image has no SQLAlchemy, Alembic or PostgreSQL dependency.
 
 ```bash
-export GOOGLE_CLOUD_PROJECT=your-project-id
-export CLOUD_RUN_REGION=us-central1
-export CLOUD_SQL_INSTANCE=your-project-id:us-central1:your-instance
-export CLOUD_RUN_SERVICE_ACCOUNT=aegis-runtime@your-project-id.iam.gserviceaccount.com
+export GOOGLE_CLOUD_PROJECT=agies-bank
+export DEPLOY_MODE=demo
 bash scripts/deploy-google.sh
 ```
 
-The script migrates the database before deploying and prints the Firebase Hosting prototype URL when successful. Resource creation, billing, Secret Manager values, Firebase project access, domain configuration and a public deployment are not performed by local tests. Rotate the leaked service-account key before provisioning; use Cloud Shell ADC and the dedicated runtime identity instead of that key file.
-
-Firestore is currently only an optional notification projection; the application still uses SQLAlchemy for its authoritative data. The requested Firestore-primary migration and SQLite import are in progress and are not ready for deployment yet. See [cloud setup](docs/CLOUD_SETUP.md) for the safe importer status and instructions.
+Run the one-time owner setup first, with an enabled `AGIES_SECRET` version and optional `OPENROUTER_API_KEY` in Secret Manager. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the currently observed external blockers. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
 
 ## Demo sign-ins
 
@@ -92,7 +86,8 @@ These credentials are intentionally public synthetic demo credentials. Productio
 - **Security:** statistical/amount/velocity/new-recipient signals, synthetic device/VPN/geo history, calculated impossible-travel checks, customer alerts, transfer holds and analyst cases.
 - **Analyst operations:** approve/reject with reasons, atomic balance rechecks, freeze/unfreeze, audit evidence, integration checks and explicitly confirmed shared-policy publication.
 - **Deployment safeguards:** expiring authenticated sessions, CSRF/origin checks, upload bounds, append-only ledger/audit guards, migrations, production configuration refusal, secure analyst provisioning and CI workflow.
-- **Google Cloud:** Cloud Run deployment script, Firebase Hosting rewrite, server-identity Firestore alert projection and deny-by-default client Firestore rules.
+- **Automations:** configurable financial reviews, security watch, document readiness and savings coaching; enable/pause/run controls, durable schedules and run history.
+- **Google Cloud:** Firestore-primary storage, Cloud Run API/web/jobs, Firebase Hosting, scheduled recovery, distinct service identities, secure cookies and deny-by-default client rules.
 
 ## Demo journey
 
@@ -103,21 +98,22 @@ These credentials are intentionally public synthetic demo credentials. Productio
 5. Send a routine payment; a larger new-recipient payment asks for password re-authentication.
 6. Simulate impossible travel and a large payment in Security; funds are held before settlement.
 7. Sign in as the analyst, inspect the case and approve/reject it with a reason.
-8. Open Integrations, check configured AI access, and publish an approved shared bank policy for customer Q&A.
+8. Open Automations to schedule a security or savings review; inspect the trace and insights.
+9. As an analyst, open Operations to reconcile balances and inspect worker health; use Integrations for provider checks.
 
 ## Test and inspect
 
-Verified: **111 backend tests, 11 HTTP security checks and 14 browser journeys**. Browser journeys passed with SQLite and with the final Docker/PostgreSQL stack. View [Financial health](docs/images/financial-health.png) and [Integrations](docs/images/integrations.png) screenshots.
-
+The backend suite has passed both in isolation and against the actual Firestore emulator; Next.js has built successfully. See [validation](docs/VALIDATION.md) for current counts and separate browser, HTTP, live-cloud and container outcomes.
 
 ```bash
 make check
+make test-firestore
 backend/.venv/bin/python -m unittest discover -s tests/acceptance -v
 # With a fresh disposable demo API/web instance running:
 npm run test:e2e --prefix frontend
 ```
 
-The cloud image supplies Chromium. Elsewhere install a Playwright browser with `cd frontend` then `npx playwright install chromium`.
+Install a Playwright browser with `cd frontend` then `npx playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an installed compatible browser.
 
 Browser journeys change banking/security state and require a fresh synthetic database. Retained suspicious events correctly change later risk decisions; do not disable those safeguards to force a repeat test to pass. CI starts from an empty database. See [validation](docs/VALIDATION.md) for executed outcomes and limitations.
 

@@ -4,9 +4,10 @@ import json
 from types import SimpleNamespace
 
 import httpx
+from conftest import seed_records
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from app.query import select
 
 from app import config
 from app.models import Document, DocumentChunk
@@ -979,7 +980,7 @@ def test_openai_tool_loop_cannot_settle_money_and_rejects_spoofed_customer(
     intelligence_db, monkeypatch
 ):
     from app.models import Transfer
-    from sqlalchemy import func
+    from app.query import func
 
     db, user, _, account, *_ = intelligence_db
     monkeypatch.setenv("AEGIS_AI_PROVIDER", "openai")
@@ -1190,7 +1191,7 @@ def test_recommendations_spending_and_budgets_use_full_posted_ledger_beyond_2000
 
     db, user, _, account, *_ = intelligence_db
     now = datetime.now(timezone.utc)
-    db.bulk_save_objects(
+    seed_records(db,
         [
             LedgerEntry(
                 account_id=account.id,

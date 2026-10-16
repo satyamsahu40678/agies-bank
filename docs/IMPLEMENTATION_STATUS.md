@@ -19,7 +19,8 @@ Scope comes from the uploaded deck and the attached conversation, including appr
 | Savings goals | Create/edit/pause/remove manual planning goals, progress and monthly contribution estimates; goal changes never move money |
 | Analyst knowledge | Explicitly confirmed publication of bank policies shared with customers; role checks and audit evidence |
 | Integrations | Gemini/Claude/OpenAI/OpenRouter selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
-| Operations | Native launcher, cross-platform local launcher, Docker/PostgreSQL, Cloud Run/Firebase deployment tooling, migrations, production guards, secure analyst provisioning and CI workflow |
+| Scheduled workflows | Financial health, security watch, document readiness, savings coaching; customer schedules, durable outbox dispatch, run traces and analyst reconciliation |
+| Operations | Native launcher, cross-platform local launcher, Docker/Firestore emulator, Cloud Run/Firebase deployment tooling, migrations, production guards, secure analyst provisioning and CI workflow |
 
 ## What an AI key enables
 
@@ -37,7 +38,7 @@ To operate with real customers and money, provider-specific agreements/APIs, san
 
 ## Other limits and next steps
 
-- Firestore-primary migration is in progress. The importer foundation can copy SQLite rows into Firestore, but application services still use SQLAlchemy; a Firestore-only deployment is not yet supported. Keep the SQLite database and do not switch the production runtime until transaction/query paths and the full import are verified.
+- Firestore-primary runtime and emulator verification are implemented. Historical rows cannot be copied without the original SQLite source. Live deployment remains subject to the Cloud API/IAM/Secret Manager prerequisites recorded in CLOUD_SETUP.md.
 - Local retrieval uses lexical ranking, not learned production embeddings/vector search.
 - Image-only/scanned PDFs require OCR before document ingestion.
 - Voice/multilingual banking and regulatory-reporting agents are deck next steps.

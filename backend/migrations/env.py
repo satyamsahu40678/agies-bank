@@ -1,8 +1,8 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from app.config import DATABASE_URL
-from app.db import Base
-from app import models
+from app.legacy_db import Base
+from app import legacy_models as models
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))

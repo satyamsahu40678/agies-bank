@@ -5,8 +5,8 @@ import io
 from datetime import timedelta
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import select, func, text, update
-from sqlalchemy.exc import DatabaseError
+from app.query import select, func, update
+from app.query import DatabaseError
 import pytest
 from app.main import app
 from app.models import Account, LedgerEntry, Transfer, AuthSession, utcnow, AuditLog
@@ -391,16 +391,16 @@ def test_registration_zero_balance_and_scoped_access(client):
 
 
 def test_logout_revocation_and_expiry(customer, db_factory):
-    cookie = customer.cookies.get("aegis_session")
+    cookie = customer.cookies.get("__session")
     assert customer.post("/api/auth/logout").status_code == 200
-    customer.cookies.set("aegis_session", cookie, domain="testserver.local", path="/")
+    customer.cookies.set("__session", cookie, domain="testserver.local", path="/")
     assert customer.get("/api/auth/me").status_code == 401
     login = customer.post(
         "/api/auth/login",
         json={"email": "customer@aegis.demo", "password": "AegisDemo!2026"},
     )
     assert login.status_code == 200
-    token = customer.cookies.get("aegis_session")
+    token = customer.cookies.get("__session")
     with db_factory() as db:
         session = db.get(AuthSession, hashlib.sha256(token.encode()).hexdigest())
         session.expires_at = utcnow() - timedelta(seconds=1)
@@ -437,24 +437,24 @@ def test_origin_and_failed_login_throttle(client):
 def test_append_only_database_evidence(customer, db_factory):
     with db_factory() as db:
         with pytest.raises(DatabaseError):
-            db.execute(text("UPDATE audit_logs SET summary='tampered'"))
+            db.execute(update(AuditLog).values(summary="tampered"))
             db.commit()
         db.rollback()
         with pytest.raises(DatabaseError):
-            db.execute(text("DELETE FROM ledger_entries"))
+            db.delete(db.scalar(select(LedgerEntry)))
             db.commit()
 
 
 def test_concurrent_replay_has_one_atomic_debit(customer, db_factory):
     before = balance(customer)
     data = payload(customer, "555.55")
-    cookie = customer.cookies.get("aegis_session")
+    cookie = customer.cookies.get("__session")
     csrf = customer.headers["X-CSRF-Token"]
 
     def transfer_once(_):
         with TestClient(app) as worker:
             worker.cookies.set(
-                "aegis_session", cookie, domain="testserver.local", path="/"
+                "__session", cookie, domain="testserver.local", path="/"
             )
             return worker.post(
                 "/api/transfers", json=data, headers={"X-CSRF-Token": csrf}

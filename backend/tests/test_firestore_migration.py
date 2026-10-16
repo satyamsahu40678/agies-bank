@@ -4,13 +4,13 @@ import pytest
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
-from app.db import Base
+from app.legacy_db import Base
 from app.firestore_migration import (
     _encode,
     migrate_sqlite_to_firestore,
 )
-from app.models import User
-from app.seed import seed_demo
+from app.legacy_models import User
+from app.legacy_seed import seed_demo
 
 
 class Snapshot:
@@ -46,11 +46,13 @@ class Batch:
     def __init__(self):
         self.writes = []
 
-    def set(self, reference, values):
+    def create(self, reference, values):
         self.writes.append((reference, values))
 
     def commit(self):
         for reference, values in self.writes:
+            if reference.id in reference.collection.values:
+                raise RuntimeError("Concurrent import conflict")
             reference.collection.values[reference.id] = values
 
 
@@ -102,7 +104,9 @@ def test_firestore_migration_imports_all_rows_and_is_resumable(sqlite_source):
     assert sum(table["skipped_identical"] for table in second.values()) == sum(
         table["source"] for table in second.values()
     )
-    assert set(client.collections) == {table.name for table in Base.metadata.sorted_tables}
+    assert set(client.collections) == {
+        table.name for table in Base.metadata.sorted_tables
+    }
 
 
 def test_firestore_migration_refuses_to_overwrite_conflicting_data(sqlite_source):
@@ -126,3 +130,44 @@ def test_firestore_migration_normalizes_dates_and_naive_datetimes():
     assert _encode(datetime(2026, 10, 16, tzinfo=timezone.utc)) == datetime(
         2026, 10, 16, tzinfo=timezone.utc
     )
+
+
+def test_imported_rows_are_readable_by_the_firestore_runtime(sqlite_source):
+    """Exercise the full legacy-export → native-domain → reconciliation path."""
+    import hashlib
+    import os
+    import uuid
+    from app.db import FirestoreBackend, MemoryBackend, SessionFactory
+    from app.maintenance import initialize_store, reconcile
+    from app.models import User as DomainUser, Account as DomainAccount
+    from app.query import select as domain_select
+
+    before = hashlib.sha256(sqlite_source.read_bytes()).digest()
+    if os.getenv("AEGIS_TEST_FIRESTORE") == "true":
+        backend = FirestoreBackend(project="demo-import-" + uuid.uuid4().hex[:12])
+        migrate_sqlite_to_firestore(sqlite_source, backend.client, apply=True)
+    else:
+        client = Firestore()
+        migrate_sqlite_to_firestore(sqlite_source, client, apply=True)
+        backend = MemoryBackend()
+        backend.commit(
+            {},
+            {
+                name + "/" + key: data
+                for name, collection in client.collections.items()
+                for key, data in collection.values.items()
+            },
+        )
+    factory = SessionFactory(backend)
+    result = initialize_store(factory)
+    assert result["reconciliation"]["ok"]
+    with factory() as db:
+        customer = db.scalar(
+            domain_select(DomainUser).where(DomainUser.email == "customer@aegis.demo")
+        )
+        account = db.scalar(
+            domain_select(DomainAccount).where(DomainAccount.user_id == customer.id)
+        )
+        assert account.balance_paise == 22548050
+        assert reconcile(db)["ok"]
+    assert hashlib.sha256(sqlite_source.read_bytes()).digest() == before
