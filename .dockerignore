@@ -11,3 +11,8 @@ logs
 test-results
 playwright-report
 attachments
+agies-bank-*.json
+**/*service-account*.json
+**/chat.json
+backend/requirements-dev.lock
+backend/tests

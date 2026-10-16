@@ -23,9 +23,13 @@ from .. import config
 
 ANTHROPIC_BASE = "https://api.anthropic.com/v1"
 OPENAI_BASE = "https://api.openai.com/v1"
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+OPENROUTER_DEFAULT_MODEL = "openrouter/free"
 MODEL_CACHE_SECONDS = 60 * 60
 _model_cache: dict[str, tuple[float, str]] = {}
 _openai_model_cache: dict[str, tuple[float, str]] = {}
+_gemini_model_cache: dict[str, tuple[float, str]] = {}
 _model_lock = threading.RLock()
 
 
@@ -293,6 +297,111 @@ def _observed_openai_model(key: str) -> str | None:
         return cached[1] if cached and cached[0] > time.monotonic() else None
 
 
+def gemini_key() -> str:
+    key = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(
+            503,
+            "Gemini requires GEMINI_API_KEY (or GOOGLE_API_KEY). Configure it securely or select local mode.",
+        )
+    return key
+
+
+def gemini_headers(key: str) -> dict[str, str]:
+    return {"x-goog-api-key": key, "content-type": "application/json"}
+
+
+def openrouter_key() -> str:
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(
+            503,
+            "OpenRouter requires OPENROUTER_API_KEY. Configure it securely or select local mode.",
+        )
+    return key
+
+
+def openrouter_headers(key: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://aegisbank.app",
+        "X-Title": "AegisBank",
+    }
+
+
+def resolve_openrouter_model() -> str:
+    model = os.getenv("OPENROUTER_MODEL", OPENROUTER_DEFAULT_MODEL).strip()
+    if not model or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}", model):
+        raise HTTPException(503, "OPENROUTER_MODEL must contain a valid model ID.")
+    return model
+
+
+def _configured_gemini_model() -> str | None:
+    model = os.getenv("GEMINI_MODEL", "").strip()
+    if model.startswith("models/"):
+        model = model[7:]
+    if model and not _valid_model(model):
+        raise HTTPException(503, "GEMINI_MODEL must contain a valid model ID.")
+    return model or None
+
+
+def resolve_gemini_model(key: str | None = None, *, refresh: bool = False) -> str:
+    configured = _configured_gemini_model()
+    if configured:
+        return configured
+    key = key or gemini_key()
+    identity = _cache_key(key)
+    with _model_lock:
+        cached = _gemini_model_cache.get(identity)
+        if cached and cached[0] > time.monotonic() and not refresh:
+            return cached[1]
+        _gemini_model_cache.pop(identity, None)
+        try:
+            with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0)) as client:
+                response = client.get(
+                    f"{GEMINI_BASE}/models", headers=gemini_headers(key)
+                )
+                body = _response_data(response, "Gemini")
+            entries = body.get("models")
+            if not isinstance(entries, list):
+                raise HTTPException(503, "Gemini returned invalid model metadata.")
+            models = []
+            for item in entries:
+                if not isinstance(item, dict):
+                    raise HTTPException(503, "Gemini returned invalid model metadata.")
+                name = item.get("name")
+                methods = item.get("supportedGenerationMethods", [])
+                if not isinstance(name, str) or not name.startswith("models/") or not isinstance(methods, list):
+                    raise HTTPException(503, "Gemini returned invalid model metadata.")
+                identifier = name[7:]
+                if "generateContent" in methods and _valid_model(identifier):
+                    models.append(identifier)
+            if not models:
+                raise HTTPException(503, "No accessible Gemini generateContent model was found. Set GEMINI_MODEL explicitly.")
+            model = max(models, key=lambda value: ("flash" in value.lower(), value))
+        except HTTPException:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError):
+            raise HTTPException(503, "Gemini model discovery could not be reached. Check network access and provider configuration.") from None
+        now = time.monotonic()
+        for expired in [entry for entry, value in _gemini_model_cache.items() if value[0] <= now]:
+            _gemini_model_cache.pop(expired, None)
+        if len(_gemini_model_cache) >= 32:
+            _gemini_model_cache.pop(next(iter(_gemini_model_cache)))
+        _gemini_model_cache[identity] = (now + MODEL_CACHE_SECONDS, model)
+        return model
+
+
+def _observed_gemini_model(key: str) -> str | None:
+    configured = _configured_gemini_model()
+    if configured:
+        return configured
+    with _model_lock:
+        cached = _gemini_model_cache.get(_cache_key(key))
+        return cached[1] if cached and cached[0] > time.monotonic() else None
+
+
 def integration_status() -> dict[str, Any]:
     key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     ai_mode, kyc_mode = config.resolve_ai_mode(), config.resolve_kyc_mode()
@@ -400,6 +509,51 @@ def integration_status() -> dict[str, Any]:
                 ],
             }
         )
+    gemini_credential = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
+    for identifier, name, selected in [
+        ("gemini", "Gemini assistant and document answers", ai_mode),
+        ("gemini_vision", "Gemini evidence quality assistance", kyc_mode),
+    ]:
+        mode = "gemini" if selected == "gemini" else "local"
+        providers.append(
+            {
+                "id": identifier,
+                "name": name,
+                "status": "local" if mode == "local" else ("configured" if gemini_credential else "unconfigured"),
+                "integrated": True,
+                "mode": mode,
+                "credential_configured": bool(gemini_credential),
+                "model": _observed_gemini_model(gemini_credential) if gemini_credential else None,
+                "model_selection": "configured" if os.getenv("GEMINI_MODEL", "").strip() else "automatic",
+                "endpoints": [f"{GEMINI_BASE}/models", f"{GEMINI_BASE}/models/{{model}}:generateContent"],
+                "capabilities": ["Scoped banking tool orchestration", "Grounded answers from retrieved, redacted document excerpts", "Transfer proposals requiring customer confirmation"] if identifier == "gemini" else ["Document readability", "Apparent portrait/person presence", "Printed-name consistency"],
+                "limitations": "Configured means a key is present, not that live inference has been validated. AI cannot settle money, override policy or approve identity." if identifier == "gemini" else "Limited vision assistance does not authenticate documents, match faces, perform biometric liveness or verify legal identity.",
+                "requirements": ["GEMINI_API_KEY (GOOGLE_API_KEY is also supported)", "Network access to generativelanguage.googleapis.com", "Restart the backend after changing .env; auto mode selects Gemini when no higher-priority provider key is configured", "An account with accessible generateContent models and sufficient quota"],
+            }
+        )
+    openrouter_credential = os.getenv("OPENROUTER_API_KEY", "").strip()
+    openrouter_model = None
+    if openrouter_credential:
+        try:
+            openrouter_model = resolve_openrouter_model()
+        except HTTPException:
+            pass
+    providers.append(
+        {
+            "id": "openrouter",
+            "name": "OpenRouter assistant and document answers",
+            "status": "local" if ai_mode != "openrouter" else ("configured" if openrouter_credential else "unconfigured"),
+            "integrated": True,
+            "mode": "openrouter" if ai_mode == "openrouter" else "local",
+            "credential_configured": bool(openrouter_credential),
+            "model": openrouter_model,
+            "model_selection": "configured" if os.getenv("OPENROUTER_MODEL", "").strip() else "automatic",
+            "endpoints": [f"{OPENROUTER_BASE}/chat/completions", f"{OPENROUTER_BASE}/models"],
+            "capabilities": ["Scoped banking tool orchestration", "Grounded answers from retrieved, redacted document excerpts", "Transfer proposals requiring customer confirmation"],
+            "limitations": "OpenRouter routes to third-party models; free model availability and capabilities can change. It is not used for identity evidence or financial authorization.",
+            "requirements": ["OPENROUTER_API_KEY", "Network access to openrouter.ai", "Set OPENROUTER_MODEL or use openrouter/free", "An available routed model with tool-call support"],
+        }
+    )
     adapters = [
         (
             "core_banking",
@@ -484,8 +638,90 @@ def integration_status() -> dict[str, Any]:
         "ai_mode": ai_mode,
         "kyc_mode": kyc_mode,
         "providers": providers,
-        "disclaimer": "Local workflows are runnable. Claude and OpenAI are key-ready; real banking, identity and other external adapters require provider-specific implementations and separate accounts. Model-access checks do not validate paid inference or real financial operations.",
+        "firestore": {
+            "agent_notifications_enabled": os.getenv(
+                "FIRESTORE_AGENT_NOTIFICATIONS", "false"
+            ).strip().lower()
+            == "true",
+            "project_configured": bool(os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()),
+            "database": os.getenv("FIRESTORE_DATABASE", "(default)").strip()
+            or "(default)",
+        },
+        "disclaimer": "Local workflows are runnable. Claude, OpenAI, Gemini and OpenRouter are key-ready; real banking, identity and other external adapters require provider-specific implementations and separate accounts. Model-access checks do not validate paid inference or real financial operations.",
     }
+
+
+def check_openrouter() -> dict[str, Any]:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    result = {
+        "status": "unconfigured",
+        "configured": bool(key),
+        "model": None,
+        "checked_at": checked_at,
+        "scope": "provider_access",
+        "message": "OPENROUTER_API_KEY is not configured. Add it securely and restart the backend.",
+    }
+    if not key:
+        return result
+    try:
+        model = resolve_openrouter_model()
+        with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0)) as client:
+            response = client.get(
+                f"{OPENROUTER_BASE}/models", headers=openrouter_headers(key)
+            )
+            _response_data(response, "OpenRouter")
+        return {
+            **result,
+            "status": "ok",
+            "model": model,
+            "message": "OpenRouter credentials can access the models catalog. No customer data or inference request was sent; the selected route may have separate availability or tool-call limits.",
+        }
+    except HTTPException as error:
+        return {**result, "status": "error", "error_code": "provider_configuration", "message": str(error.detail)}
+    except (httpx.HTTPError, ValueError, TypeError):
+        return {**result, "status": "error", "error_code": "provider_connectivity", "message": "OpenRouter could not be reached. Check network access and configured credentials."}
+
+
+def check_gemini() -> dict[str, Any]:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    key = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
+    result = {
+        "status": "unconfigured",
+        "configured": bool(key),
+        "model": None,
+        "checked_at": checked_at,
+        "scope": "model_access",
+        "message": "GEMINI_API_KEY is not configured. Add it securely and restart the backend.",
+    }
+    if not key:
+        return result
+    try:
+        configured = _configured_gemini_model()
+        if configured:
+            with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0)) as client:
+                body = _response_data(
+                    client.get(
+                        f"{GEMINI_BASE}/models/{configured}",
+                        headers=gemini_headers(key),
+                    ),
+                    "Gemini",
+                )
+            if body.get("name") != f"models/{configured}":
+                raise HTTPException(503, "Gemini returned invalid model metadata.")
+            model = configured
+        else:
+            model = resolve_gemini_model(key, refresh=True)
+        return {
+            **result,
+            "status": "ok",
+            "model": model,
+            "message": "Credentials can access a generateContent model. No customer data or paid inference was sent; live assistant requests require quota and separate validation.",
+        }
+    except HTTPException as error:
+        return {**result, "status": "error", "error_code": "provider_configuration", "message": str(error.detail)}
+    except (httpx.HTTPError, ValueError, TypeError):
+        return {**result, "status": "error", "error_code": "provider_connectivity", "message": "Google Gemini could not be reached. Check allowed network destinations and configured credentials."}
 
 
 def check_claude() -> dict[str, Any]:

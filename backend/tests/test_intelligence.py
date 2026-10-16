@@ -7,11 +7,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from pypdf import PdfWriter
-from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
-
-from app.db import Base
+from app.query import func, select
+from app.db import SessionFactory, MemoryBackend, FirestoreBackend
 from app.models import (
     Account,
     AuditLog,
@@ -32,9 +29,14 @@ def intelligence_db(monkeypatch):
     monkeypatch.delenv("AEGIS_AI_PROVIDER", raising=False)
     monkeypatch.setenv("AEGIS_AI_MODE", "local")
     monkeypatch.setenv("AEGIS_KYC_VISION", "local")
-    engine = create_engine("sqlite://", poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    with Session(engine, expire_on_commit=False) as db:
+    import os, uuid
+
+    backend = (
+        FirestoreBackend(project="demo-ai-" + uuid.uuid4().hex[:12])
+        if os.getenv("AEGIS_TEST_FIRESTORE") == "true"
+        else MemoryBackend()
+    )
+    with SessionFactory(backend)() as db:
         user = User(
             name="Synthetic Customer",
             email="synthetic@example.test",
@@ -112,7 +114,6 @@ def intelligence_db(monkeypatch):
         )
         db.commit()
         yield db, user, other, account, public, private
-    engine.dispose()
 
 
 def test_document_citations_are_exact_and_tenant_scoped(intelligence_db):

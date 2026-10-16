@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 from app.main import app
+import httpx
+from app.services import providers
 
 
 def test_shared_policy_publication_requires_analyst_and_explicit_sharing(
@@ -70,7 +72,14 @@ def test_private_source_passages_are_isolated(customer):
 
 
 def test_provider_metadata_and_checks_never_expose_credentials(analyst, monkeypatch):
-    for name in ("ANTHROPIC_API_KEY", "AEGIS_OPENAI_API_KEY", "OPENAI_API_KEY"):
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "AEGIS_OPENAI_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENROUTER_API_KEY",
+    ):
         monkeypatch.delenv(name, raising=False)
     metadata = analyst.get("/api/analyst/integrations")
     assert metadata.status_code == 200
@@ -88,15 +97,93 @@ def test_provider_metadata_and_checks_never_expose_credentials(analyst, monkeypa
         not in analyst.get("/api/analyst/integrations").text
     )
     monkeypatch.delenv("ANTHROPIC_API_KEY")
-    for provider in ("claude", "openai"):
+    for provider in ("claude", "openai", "gemini", "openrouter"):
         result = analyst.post(f"/api/analyst/integrations/{provider}/check")
         assert result.status_code == 200, result.text
         assert result.json()["status"] == "unconfigured"
         assert result.json()["configured"] is False
 
 
+def test_openrouter_connection_check_is_analyst_only_and_secret_safe(
+    analyst, customer, monkeypatch
+):
+    from app.services import providers
+    import httpx
+
+    secret = "synthetic-openrouter-key"
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"data": []})
+            ),
+            **kwargs,
+        ),
+    )
+    result = analyst.post("/api/analyst/integrations/openrouter/check")
+    assert result.status_code == 200
+    assert result.json()["status"] == "ok"
+    assert secret not in result.text
+    assert (
+        customer.post("/api/analyst/integrations/openrouter/check").status_code == 403
+    )
+    assert analyst.get("/api/analyst/integrations/openrouter/check").status_code == 405
+
+
+def test_gemini_provider_metadata_and_connection_check_are_secret_safe(
+    analyst, monkeypatch
+):
+    secret = "synthetic-gemini-credential"
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("AEGIS_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "auto")
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+    metadata = analyst.get("/api/analyst/integrations")
+    assert metadata.status_code == 200
+    payload = metadata.json()
+    gemini = next(item for item in payload["providers"] if item["id"] == "gemini")
+    assert gemini["credential_configured"] is True
+    assert gemini["status"] == "configured"
+    assert secret not in metadata.text
+    # No test should send synthetic credentials to a live provider.
+    original_client = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: original_client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    401, json={"error": {"message": "Invalid credential"}}
+                )
+            ),
+            trust_env=False,
+            **kwargs,
+        ),
+    )
+    checked = analyst.post("/api/analyst/integrations/gemini/check")
+    assert checked.status_code == 200
+    assert checked.json()["status"] == "error"
+    assert secret not in checked.text
+    assert analyst.get("/api/analyst/integrations/gemini/check").status_code == 405
+
+
+def test_agent_notification_feed_is_customer_scoped_and_uses_sql_when_firestore_disabled(
+    customer, analyst, monkeypatch
+):
+    monkeypatch.setenv("FIRESTORE_AGENT_NOTIFICATIONS", "false")
+    response = customer.get("/api/notifications/agents")
+    assert response.status_code == 200
+    assert response.json() == {"source": "database", "items": []}
+    assert analyst.get("/api/notifications/agents").status_code == 403
+
+
 def test_budget_api_combines_category_variants(customer, db_factory):
-    from sqlalchemy import select
+    from app.query import select
     from app.models import Account, LedgerEntry, User
 
     with db_factory() as db:

@@ -4,7 +4,7 @@ import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from fastapi import Depends, HTTPException, Request, Response
-from sqlalchemy import select, delete, func
+from .query import select, delete, func
 from .config import ALLOWED_ORIGINS, PRODUCTION, SESSION_SECONDS
 from .db import get_db
 from .models import AuthSession, User, LoginAttempt, utcnow
@@ -35,7 +35,7 @@ def origin_check(request: Request):
 
 
 def session_user(request: Request, db=Depends(get_db)):
-    token = request.cookies.get("aegis_session", "")
+    token = request.cookies.get("__session", "")
     session = db.get(AuthSession, digest(token)) if token else None
     if not session:
         raise HTTPException(401, "Please sign in")
@@ -74,7 +74,7 @@ def analyst(user=Depends(session_user)):
 
 
 def create_session(db, user, request, response):
-    old_token = request.cookies.get("aegis_session")
+    old_token = request.cookies.get("__session")
     if old_token:
         db.execute(delete(AuthSession).where(AuthSession.id == digest(old_token)))
     db.execute(delete(AuthSession).where(AuthSession.expires_at < utcnow()))
@@ -88,7 +88,7 @@ def create_session(db, user, request, response):
         )
     )
     response.set_cookie(
-        "aegis_session",
+        "__session",
         token,
         max_age=SESSION_SECONDS,
         httponly=True,

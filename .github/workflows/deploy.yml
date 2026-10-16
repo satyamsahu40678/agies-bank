@@ -1,0 +1,40 @@
+name: Deploy Firestore application
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Deployment mode (demo has synthetic accounts)
+        required: true
+        default: demo
+        type: choice
+        options: [demo, production]
+concurrency:
+  group: agies-google-deployment
+  cancel-in-progress: false
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/feat/deployment-and-enhance'
+    environment: google-cloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GOOGLE_CLOUD_PROJECT: agies-bank
+      DEPLOY_MODE: ${{ inputs.mode }}
+      DEPLOY_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools@15.34.0
+      - name: Preflight, build, migrate, deploy, schedule and verify
+        run: bash scripts/deploy-google.sh

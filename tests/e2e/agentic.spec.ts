@@ -340,14 +340,14 @@ test("analyst policy publication requires public-sharing consent and customers c
   }
 });
 
-test("provider readiness distinguishes runnable demo adapters and unconfigured Claude and OpenAI model access", async ({
+test("provider readiness distinguishes demo adapters and all four unconfigured AI providers", async ({
   page,
 }) => {
   await signIn(page, "analyst");
   await page.goto("/analyst/integrations");
   await expect(
     page.getByRole("heading", {
-      name: "Claude & OpenAI integrations",
+      name: "AI provider integrations",
       exact: true,
     }),
   ).toBeVisible();
@@ -362,7 +362,7 @@ test("provider readiness distinguishes runnable demo adapters and unconfigured C
     }[];
   } = await readinessResponse.json();
   expect(readiness.ai_mode).toBe("local");
-  for (const provider of ["claude", "openai"]) {
+  for (const provider of ["claude", "openai", "gemini", "openrouter"]) {
     expect(
       readiness.providers.find((item) => item.id === provider)?.integrated,
     ).toBe(true);
@@ -379,10 +379,7 @@ test("provider readiness distinguishes runnable demo adapters and unconfigured C
     );
     await page
       .getByRole("button", {
-        name:
-          provider === "claude"
-            ? "Check Claude connection"
-            : "Check OpenAI connection",
+        name: `Check ${{claude: "Claude", openai: "OpenAI", gemini: "Gemini", openrouter: "OpenRouter"}[provider]} connection`,
         exact: true,
       })
       .click();
@@ -391,7 +388,7 @@ test("provider readiness distinguishes runnable demo adapters and unconfigured C
     const payload = await probeResult.json();
     expect(payload.status).toBe("unconfigured");
     expect(payload.configured).toBe(false);
-    expect(payload.scope).toBe("model_access");
+    expect(payload.scope).toBe(provider === "openrouter" ? "provider_access" : "model_access");
     await expect(
       page.getByText(payload.message, { exact: false }).first(),
     ).toBeVisible();
@@ -466,7 +463,7 @@ test("mobile financial health and integration workspaces remain navigable withou
     await expect(consolePage).toHaveURL(/\/analyst\/integrations$/);
     await expect(
       consolePage.getByRole("heading", {
-        name: "Claude & OpenAI integrations",
+        name: "AI provider integrations",
         exact: true,
       }),
     ).toBeVisible();

@@ -1,5 +1,5 @@
 from datetime import timedelta
-from sqlalchemy import select
+from .query import select
 from .models import *
 from .auth import hash_password
 from .services.workflows import account_hash

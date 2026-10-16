@@ -1,6 +1,6 @@
 # Implemented, configured and remaining work
 
-The linked conversation could not be retrieved. Scope comes from the uploaded deck plus the user's subsequent decisions, including explicit approval to use banking/identity mocks and support both Claude and OpenAI.
+Scope comes from the uploaded deck and the attached conversation, including approval to use banking/identity mocks and support Gemini, Claude, OpenAI and OpenRouter.
 
 ## Implemented workflows
 
@@ -18,12 +18,13 @@ The linked conversation could not be retrieved. Scope comes from the uploaded de
 | Financial health | Posted-ledger cash flow, budget warnings, subscription observations, safe guidance and dismissible insights |
 | Savings goals | Create/edit/pause/remove manual planning goals, progress and monthly contribution estimates; goal changes never move money |
 | Analyst knowledge | Explicitly confirmed publication of bank policies shared with customers; role checks and audit evidence |
-| Integrations | Claude/OpenAI selection, automatic activation from supplied keys, read-only model-access checks and truthful adapter status |
-| Operations | Native launcher, cross-platform local launcher, Docker/PostgreSQL, migrations, production guards, secure analyst provisioning and CI workflow |
+| Integrations | Gemini/Claude/OpenAI/OpenRouter selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
+| Scheduled workflows | Financial health, security watch, document readiness, savings coaching; customer schedules, durable outbox dispatch, run traces and analyst reconciliation |
+| Operations | Native launcher, cross-platform local launcher, Docker/Firestore emulator, Cloud Run/Firebase deployment tooling, migrations, production guards, secure analyst provisioning and CI workflow |
 
 ## What an AI key enables
 
-An Anthropic or OpenAI key enables the implemented model-assisted chat/tool loop, grounded document answers and limited KYC image assessment. Selection is configurable and local mode remains available. Financial policy, settlement, identity authority and permissions remain server-governed; model output cannot bypass them.
+A Gemini, Anthropic, OpenAI or OpenRouter key enables the implemented model-assisted chat/tool loop and grounded document answers. Gemini, Anthropic and OpenAI also support limited KYC image assessment. Selection and model names are configurable and local mode remains available. Financial policy, settlement, identity authority and permissions remain server-governed; model output cannot bypass them.
 
 Model-assisted KYC assesses legibility, person presence and name consistency. It is not legal identity proof, liveness, biometric matching or an authoritative sanctions decision. Stored decisions and tool records are summaries, not hidden chain-of-thought.
 
@@ -31,12 +32,13 @@ No live AI key was supplied during development. Provider protocol behavior is te
 
 ## Explicitly mocked by the user's decision
 
-Core-bank settlement, KYC/sanctions vendors, credit bureau and geolocation/device providers remain synthetic, self-contained adapters. The app works end to end in this mode, with no real money moved or real loan issued. A Claude or OpenAI key does not turn these into real financial providers.
+Core-bank settlement, KYC/sanctions vendors, credit bureau and geolocation/device providers remain synthetic, self-contained adapters. The app works end to end in this mode, with no real money moved or real loan issued. An LLM key does not turn these into real financial providers.
 
 To operate with real customers and money, provider-specific agreements/APIs, sandbox verification, webhook signatures/idempotency, customer consent, regulatory review, reconciliation and operational security are separate required work. Production MFA requires an enrolled second-factor provider or WebAuthn/TOTP implementation; the current password challenge is labelled a demo substitute.
 
 ## Other limits and next steps
 
+- Firestore-primary runtime and emulator verification are implemented. Historical rows cannot be copied without the original SQLite source. Live deployment remains subject to the Cloud API/IAM/Secret Manager prerequisites recorded in CLOUD_SETUP.md.
 - Local retrieval uses lexical ranking, not learned production embeddings/vector search.
 - Image-only/scanned PDFs require OCR before document ingestion.
 - Voice/multilingual banking and regulatory-reporting agents are deck next steps.

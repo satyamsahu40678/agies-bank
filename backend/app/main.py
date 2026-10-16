@@ -14,17 +14,17 @@ from fastapi import (
     Request,
     Response,
     UploadFile,
+    BackgroundTasks,
     File,
     Form,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select, func, or_, update, text, case
-from sqlalchemy.exc import IntegrityError
+from .query import select, func, or_, update, case, IntegrityError, ConcurrentWrite
 from PIL import Image, UnidentifiedImageError
 from . import config
-from .db import Base, engine, get_db, SessionLocal
+from .db import get_db, SessionLocal
 from .models import *
 from .auth import *
 from .serializers import *
@@ -36,34 +36,9 @@ from .seed import seed_demo
 @asynccontextmanager
 async def lifespan(app):
     config.validate_configuration()
-    if config.PRODUCTION:
-        with engine.connect() as conn:
-            try:
-                current = conn.execute(
-                    text("SELECT version_num FROM alembic_version")
-                ).scalar_one()
-                from alembic.config import Config as AlembicConfig
-                from alembic.script import ScriptDirectory
-
-                expected = ScriptDirectory.from_config(
-                    AlembicConfig(str(config.ROOT / "alembic.ini"))
-                ).get_current_head()
-                if current != expected:
-                    raise RuntimeError(
-                        "Database migration required; run python -m app.manage migrate"
-                    )
-            except Exception as exc:
-                raise RuntimeError(
-                    "Database is not migrated; run python -m app.manage migrate"
-                ) from exc
-    else:
-        Base.metadata.create_all(engine)
-        from .immutability import install_guards
-
-        with engine.begin() as connection:
-            install_guards(connection)
     with SessionLocal() as db:
-        if config.PRODUCTION and db.scalar(
+        db.ping()
+        if config.ENV == "production" and db.scalar(
             select(User.id)
             .where(User.email.in_(["customer@aegis.demo", "analyst@aegis.demo"]))
             .limit(1)
@@ -71,6 +46,12 @@ async def lifespan(app):
             raise RuntimeError(
                 "Production database contains synthetic demo identities. Provision a clean production database; existing records have been preserved."
             )
+        if config.PRODUCTION:
+            marker = db.backend.read("_system/schema")[0]
+            if not marker or marker.get("version") != 2:
+                raise RuntimeError(
+                    "Firestore schema must be initialized; run python -m app.manage migrate with writers stopped"
+                )
         if config.DEMO_ENABLED:
             seed_demo(db)
         elif not db.scalar(
@@ -96,7 +77,68 @@ async def lifespan(app):
         worker.stop()
 
 
-app = FastAPI(title="AegisBank API", version="1.0.0", lifespan=lifespan)
+from fastapi.routing import APIRoute
+from starlette.responses import JSONResponse
+import asyncio
+
+
+class TransactionRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def retry(request):
+            # Replay local business operations after optimistic conflicts. Provider
+            # endpoints return a retryable 409 to avoid repeating external inference.
+            external = request.url.path in {
+                "/api/chat",
+                "/api/kyc",
+                "/api/documents/query",
+            }
+            attempts = 1 if external else 8
+            for attempt in range(attempts):
+                try:
+                    return await handler(request)
+                except ConcurrentWrite:
+                    if attempt + 1 == attempts:
+                        return JSONResponse(
+                            {
+                                "detail": "Data changed concurrently. Retry the same request and idempotency key."
+                            },
+                            409,
+                            headers={"Retry-After": "1"},
+                        )
+                    await asyncio.sleep(
+                        min(0.3, 0.01 * 2**attempt) + secrets.randbelow(20) / 1000
+                    )
+
+        return retry
+
+
+app = FastAPI(title="AegisBank API", version="2.0.0", lifespan=lifespan)
+app.router.route_class = TransactionRoute
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_conflict(request, exc):
+    return JSONResponse(
+        {"detail": "A record conflicts with an existing value or a data constraint."},
+        409,
+    )
+
+
+@app.exception_handler(
+    __import__(
+        "google.api_core.exceptions", fromlist=["GoogleAPICallError"]
+    ).GoogleAPICallError
+)
+async def storage_unavailable(request, exc):
+    return JSONResponse(
+        {"detail": "The data service is temporarily unavailable. Retry shortly."},
+        503,
+        headers={"Retry-After": "3"},
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ALLOWED_ORIGINS,
@@ -278,14 +320,122 @@ def queue_financial_review(db, user, trigger, *, stale_only=False, dedup_key=Non
 
 @app.get("/api/health")
 def health(db=Depends(get_db)):
-    db.execute(text("SELECT 1"))
+    db.ping()
     return {
         "status": "ok",
         "database": "connected",
+        "storage": os.getenv("AEGIS_STORAGE_BACKEND", "firestore"),
         "ai_mode": config.resolve_ai_mode(),
         "demo_enabled": config.DEMO_ENABLED,
         "kyc_mode": config.resolve_kyc_mode(),
         "proactive_agents": "enabled",
+    }
+
+
+class AutomationInput(Input):
+    kind: str = Field(min_length=1, max_length=40)
+    interval_hours: int = Field(default=24, ge=1, le=168, strict=True)
+    enabled: bool = True
+
+
+@app.get("/api/automations")
+def list_automations(user=Depends(customer), db=Depends(get_db)):
+    from .services.automations import CATALOG, automation_json
+
+    return {
+        "catalog": CATALOG,
+        "items": [
+            automation_json(x)
+            for x in db.scalars(select(Automation).where(Automation.user_id == user.id))
+        ],
+        "read_only_workflows": True,
+    }
+
+
+@app.put("/api/automations")
+def save_automation(
+    payload: AutomationInput, user=Depends(customer), db=Depends(get_db)
+):
+    from .services.automations import save, automation_json
+
+    item = save(db, user, **payload.model_dump())
+    db.commit()
+    return automation_json(item)
+
+
+@app.post("/api/automations/{automation_id}/run", status_code=202)
+def run_automation(
+    automation_id: str,
+    background_tasks: BackgroundTasks,
+    user=Depends(customer),
+    db=Depends(get_db),
+):
+    from .services.automations import owned, queue
+    from .services.proactive import run_json
+
+    item = owned(db, user, automation_id)
+    if not item.enabled:
+        raise HTTPException(409, "Enable this automation before running it")
+    run = queue(db, user, item)
+    db.commit()
+    background_tasks.add_task(drain_agent_jobs, SessionLocal)
+    return run_json(run)
+
+
+def drain_agent_jobs(factory):
+    """A response background task keeps request CPU active; Scheduler recovers crashes."""
+    import logging
+    from .services.proactive import process_next
+
+    for _ in range(5):
+        try:
+            if not process_next(factory):
+                break
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Agent wake failed (%s)", type(exc).__name__
+            )
+            break
+
+
+@app.delete("/api/automations/{automation_id}")
+def delete_automation(automation_id: str, user=Depends(customer), db=Depends(get_db)):
+    from .services.automations import owned
+
+    item = owned(db, user, automation_id)
+    db.delete(item)
+    audit(
+        db,
+        user.id,
+        "orchestrator",
+        "automation_deleted",
+        "Customer removed a workflow schedule.",
+        ["automations:write"],
+    )
+    db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/analyst/operations")
+def operations(user=Depends(analyst), db=Depends(get_db)):
+    from .maintenance import reconcile
+
+    runs = db.scalars(select(AgentRun)).all()
+    return {
+        "storage": os.getenv("AEGIS_STORAGE_BACKEND", "firestore"),
+        "reconciliation": reconcile(db),
+        "jobs": {
+            state: sum(r.status == state for r in runs)
+            for state in ["queued", "running", "completed", "failed"]
+        },
+        "expired_leases": sum(
+            r.status == "running"
+            and r.lease_expires_at is not None
+            and r.lease_expires_at <= utcnow()
+            for r in runs
+        ),
+        "automations": db.scalar(select(func.count()).select_from(Automation)),
+        "checked_at": utcnow(),
     }
 
 
@@ -386,7 +536,7 @@ def logout(
         ["logout"],
     )
     db.commit()
-    response.delete_cookie("aegis_session", path="/")
+    response.delete_cookie("__session", path="/")
     return {"ok": True}
 
 
@@ -1052,7 +1202,7 @@ async def upload_document(
     if (
         not chunks
         or sum(len(c["text"]) for c in chunks) > 2_000_000
-        or len(chunks) > 2000
+        or len(chunks) > 300
     ):
         raise HTTPException(
             422, "Document has no usable text or exceeds extraction limits"
@@ -1246,13 +1396,17 @@ def resolve_case(
 
 @app.get("/api/analyst/customers")
 def analyst_customers(user=Depends(analyst), db=Depends(get_db)):
-    rows = db.execute(
-        select(User, Account)
-        .join(Account, Account.user_id == User.id)
-        .where(User.role == "customer")
-        .order_by(User.created_at.desc())
-        .limit(200)
-    ).all()
+    accounts = {a.user_id: a for a in db.scalars(select(Account))}
+    rows = [
+        (u, accounts[u.id])
+        for u in db.scalars(
+            select(User)
+            .where(User.role == "customer")
+            .order_by(User.created_at.desc())
+            .limit(200)
+        )
+        if u.id in accounts
+    ]
     return [
         {
             "id": u.id,
@@ -1311,12 +1465,22 @@ def financial_insights(user=Depends(customer), db=Depends(get_db)):
     return list_insights(db, user)
 
 
+@app.get("/api/notifications/agents")
+def agent_notifications(user=Depends(customer), db=Depends(get_db)):
+    from .services.firestore_notifications import list_notifications
+
+    return list_notifications(db, user)
+
+
 @app.post("/api/insights/refresh", status_code=202)
-def refresh_financial_insights(user=Depends(customer), db=Depends(get_db)):
+def refresh_financial_insights(
+    background_tasks: BackgroundTasks, user=Depends(customer), db=Depends(get_db)
+):
     from .services.proactive import refresh_insights
 
     result = refresh_insights(db, user)
     db.commit()
+    background_tasks.add_task(drain_agent_jobs, SessionLocal)
     return result
 
 
@@ -1339,11 +1503,17 @@ def agent_runs(user=Depends(customer), db=Depends(get_db)):
 
 
 @app.post("/api/agent-runs/{run_id}/retry", status_code=202)
-def retry_agent_run(run_id: str, user=Depends(customer), db=Depends(get_db)):
+def retry_agent_run(
+    run_id: str,
+    background_tasks: BackgroundTasks,
+    user=Depends(customer),
+    db=Depends(get_db),
+):
     from .services.proactive import retry_run
 
     result = retry_run(db, user, run_id)
     db.commit()
+    background_tasks.add_task(drain_agent_jobs, SessionLocal)
     return result
 
 
@@ -1424,6 +1594,40 @@ def verify_openai_integration(user=Depends(analyst), db=Depends(get_db)):
     return result
 
 
+@app.post("/api/analyst/integrations/gemini/check")
+def verify_gemini_integration(user=Depends(analyst), db=Depends(get_db)):
+    from .services.providers import check_gemini
+
+    result = check_gemini()
+    audit(
+        db,
+        user.id,
+        "orchestrator",
+        "provider_connection_checked",
+        f"Gemini connection check: {result['status']}; no financial action performed",
+        ["provider_models_read"],
+    )
+    db.commit()
+    return result
+
+
+@app.post("/api/analyst/integrations/openrouter/check")
+def verify_openrouter_integration(user=Depends(analyst), db=Depends(get_db)):
+    from .services.providers import check_openrouter
+
+    result = check_openrouter()
+    audit(
+        db,
+        user.id,
+        "orchestrator",
+        "provider_connection_checked",
+        f"OpenRouter connection check: {result['status']}; no financial action performed",
+        ["provider_models_read"],
+    )
+    db.commit()
+    return result
+
+
 @app.get("/api/analyst/documents")
 def shared_policy_library(user=Depends(analyst), db=Depends(get_db)):
     return [
@@ -1458,7 +1662,7 @@ async def publish_bank_policy(
 
     filename, data = await bounded_file(file)
     chunks = await run_in_threadpool(extract_document, filename, data)
-    if not chunks or len(chunks) > 2000:
+    if not chunks or len(chunks) > 300:
         raise HTTPException(
             422, "Document has no usable text or exceeds extraction limits"
         )

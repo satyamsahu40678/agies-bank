@@ -25,7 +25,7 @@ type Submission = {
 type Kyc = { status: string; submissions: Submission[]; disclaimer: string };
 type Health = {
   demo_enabled: boolean;
-  kyc_mode: "local" | "claude" | "openai";
+  kyc_mode: "local" | "claude" | "openai" | "gemini";
 };
 
 export default function KycPage() {
@@ -36,9 +36,15 @@ export default function KycPage() {
   const [result, setResult] = useState<Submission | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   const visionEnabled =
-    health.data?.kyc_mode === "claude" || health.data?.kyc_mode === "openai";
+    health.data?.kyc_mode === "claude" ||
+    health.data?.kyc_mode === "openai" ||
+    health.data?.kyc_mode === "gemini";
   const visionProvider =
-    health.data?.kyc_mode === "openai" ? "OpenAI" : "Claude";
+    health.data?.kyc_mode === "openai"
+      ? "OpenAI"
+      : health.data?.kyc_mode === "gemini"
+        ? "Gemini"
+        : "Claude";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

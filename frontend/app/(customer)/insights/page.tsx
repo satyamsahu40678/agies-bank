@@ -41,6 +41,10 @@ type GoalDraft = {
   target_date: string;
   status: SavingsGoal["status"];
 };
+type AgentNotifications = {
+  source: "database" | "firestore";
+  items: { id: string; severity: string; title: string; message: string }[];
+};
 const blankGoal: GoalDraft = {
   name: "",
   target_amount: "",
@@ -69,6 +73,7 @@ export default function InsightsPage() {
   const insights = useResource<FinancialInsights>("/insights");
   const goals = useResource<SavingsGoal[]>("/goals");
   const runs = useResource<AgentRun[]>("/agent-runs");
+  const notifications = useResource<AgentNotifications>("/notifications/agents");
   const [refreshing, setRefreshing] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
@@ -266,6 +271,9 @@ export default function InsightsPage() {
     0,
     Math.min(100, Number(summary?.savings_rate || 0)),
   );
+  const agentAlerts = notifications.data?.items.filter(
+    (item) => item.severity === "critical" || item.severity === "warning",
+  ) || [];
 
   return (
     <div className="stack health-page">
@@ -276,7 +284,7 @@ export default function InsightsPage() {
         action={
           <Button
             variant="secondary"
-            disabled={refreshing || hasPendingRun}
+            disabled={refreshing || hasPendingRun || !runs.data || !insights.data}
             onClick={refreshAnalysis}
           >
             {refreshing ? (
@@ -290,6 +298,17 @@ export default function InsightsPage() {
           </Button>
         }
       />
+      {notifications.error && !notifications.data && (
+        <Notice tone="warning">Agent notifications are temporarily unavailable.</Notice>
+      )}
+      {agentAlerts.length > 0 && (
+        <Notice tone={agentAlerts.some((item) => item.severity === "critical") ? "danger" : "warning"}>
+          <strong>{agentAlerts[0].title}</strong> {agentAlerts[0].message}{" "}
+          <span className="muted">
+            {notifications.data?.source === "firestore" ? "Cloud alert" : "Account alert"}
+          </span>
+        </Notice>
+      )}
       {actionError && <Notice tone="danger">{actionError}</Notice>}
       {actionNotice && <Notice tone="success">{actionNotice}</Notice>}
       {insights.loading && !insights.data ? (
@@ -452,7 +471,7 @@ export default function InsightsPage() {
                   >
                     <Button
                       variant="secondary"
-                      disabled={refreshing || hasPendingRun}
+                      disabled={refreshing || hasPendingRun || !runs.data || !insights.data}
                       onClick={refreshAnalysis}
                     >
                       <RefreshCw size={14} />

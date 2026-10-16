@@ -16,7 +16,7 @@ Source: the supplied AegisBank Hackathon Deck. The linked conversation is unavai
 ## Stack and operational decisions
 
 - Next.js/React/TypeScript customer app, analyst console and event simulator.
-- FastAPI/Python gateway, SQLAlchemy persistence. SQLite runs without infrastructure locally; PostgreSQL via Docker Compose is the deployment path. Mock core bank, KYC, sanctions and bureau are explicit demo adapters.
+- FastAPI/Python gateway with authoritative Firestore storage. Explicit memory mode supports disposable local demos; Docker Compose supplies a persistent local Firestore emulator. Mock core bank, KYC, sanctions and bureau are explicit demo adapters.
 - Local lexical retrieval with source citations works offline; architecture documents production embedding/pgvector adapter limitations. Never label local scoring as a learned production model.
 - Password hashing, expiring authenticated sessions, HTTP-only cookies, origin/CSRF protections, upload limits, scoped authorization and redacted audit/LLM payloads.
 - Production startup fails on insecure secrets/demo configuration; documented deployment and backup instructions. Real regulated banking requires real provider integrations and operational/compliance review.
@@ -28,7 +28,7 @@ Backend integration tests cover authentication and authorization, tenant isolati
 ## Subsequent user-approved additions
 
 - External bank and identity services remain explicit mocks unless real provider accounts/protocols are supplied.
-- Claude and OpenAI are selectable application-wide for chat/tool orchestration, grounded document answers and limited KYC vision. Supplying a supported key enables automatic mode; explicit local selection is respected.
+- Gemini, Claude, OpenAI and OpenRouter are selectable for chat/tool orchestration and grounded document answers. Gemini, Claude and OpenAI can also provide limited KYC evidence-quality assistance; OpenRouter is excluded from that flow. Supplying a supported key enables automatic mode; explicit local selection is respected.
 - Durable proactive financial-health workflows, bounded retries and run visibility; savings-goal planning without moving funds.
 - Analyst integration readiness and public-policy publication; customer indexed-source preview.
 - Cross-platform local launcher, complete README/status documentation, and application publication on a GitHub feature branch after checks.

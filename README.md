@@ -1,6 +1,6 @@
 # AegisBank
 
-A runnable, governed agentic banking application with customer and analyst workspaces, configurable **Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
+A runnable, governed agentic banking application with customer and analyst workspaces, configurable **OpenRouter, Gemini, Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
 
 Banking, identity/sanctions, bureau and geo/device providers use explicit synthetic adapters, as requested. No real money moves. AI keys enable the implemented model-assisted capabilities; they do not establish a real bank or legal identity-provider connection.
 
@@ -11,7 +11,7 @@ Banking, identity/sanctions, bureau and geo/device providers use explicit synthe
 Install **Python 3.12+** and **Node.js 24 LTS** (includes npm). Then:
 
 ```bash
-git clone --branch feat/aegisbank-complete https://github.com/satyamsahu40678/agies-bank.git
+git clone --branch feat/deployment-and-enhance https://github.com/satyamsahu40678/agies-bank.git
 cd agies-bank
 python scripts/run-local.py --setup --open
 ```
@@ -27,25 +27,42 @@ make setup
 make dev
 ```
 
-For Docker Desktop/PostgreSQL, copy `.env.example` to `.env`, generate distinct random `POSTGRES_PASSWORD` and `AEGIS_SECRET`, then run `docker compose up --build -d`. See [operations](docs/OPERATIONS.md) for proxy-aware builds and production requirements.
+Local launchers use disposable in-memory data by default. For persistent local data, use the Firestore emulator with `docker compose up --build -d`, or configure a Firestore development project. Hosted mode always requires Firestore. See [operations](docs/OPERATIONS.md).
 
-## Add Claude or OpenAI
+## Add Gemini, Claude, OpenAI or OpenRouter
 
 Create or edit the **project-root `.env`**, which is ignored by Git. Enter keys there or in secure backend environment settings; do not put them in chat, browser forms or source code.
 
 ```dotenv
 AEGIS_AI_PROVIDER=auto
 AEGIS_KYC_VISION=auto
-# Add either provider's key:
+# Add a provider key:
+GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 AEGIS_OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+# Optional model override:
+GEMINI_MODEL=
+OPENROUTER_MODEL=openrouter/free
 ```
 
-Restart the backend after editing. With one supplied key, automatic mode selects that provider for chat/tools, document synthesis and limited KYC image assessment. With both keys, auto deterministically prefers Claude; set `AEGIS_AI_PROVIDER=openai` or `claude` to choose. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
+Restart the backend after editing. Automatic mode selects a configured provider for chat/tools and document synthesis. Precedence is Claude, OpenAI, OpenRouter, then Gemini; set `AEGIS_AI_PROVIDER` to `gemini`, `openai`, `claude` or `openrouter` to choose. OpenRouter defaults to `openrouter/free`; route availability and tool calling vary and can change. OpenRouter is not used for KYC image review. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
 
-Local `OPENAI_API_KEY` is accepted as an alias. In Codex cloud settings use `AEGIS_OPENAI_API_KEY`, because `OPENAI_API_KEY` is a reserved platform target name. Optional model overrides are `ANTHROPIC_MODEL` and `AEGIS_OPENAI_MODEL`; otherwise the app discovers an accessible supported model. Allow `api.anthropic.com` and/or `api.openai.com` when running behind restricted egress.
+`GOOGLE_API_KEY` is accepted as a Gemini alias. Local `OPENAI_API_KEY` is accepted as an alias. Optional model overrides are `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `AEGIS_OPENAI_MODEL` and `OPENROUTER_MODEL`; otherwise the app discovers a supported model where implemented. Gemini uses Google's native `generateContent` function calling and sends credentials in an API-key header, not a URL. OpenRouter uses its OpenAI-compatible chat completions API. Allow `generativelanguage.googleapis.com`, `openrouter.ai`, `api.anthropic.com` and/or `api.openai.com` when running behind restricted egress.
 
-The analyst **Integrations** page shows implemented adapters, effective modes and credential presence without revealing values. Connection buttons check model access without sending customer data. Supplied keys still need valid account permissions, billing and network access. No live AI key was supplied during development; provider behavior is exercised with mocked protocol responses.
+The analyst **Integrations** page shows implemented adapters, effective modes and credential presence without revealing values. Connection buttons check model/catalog access without sending customer data; that does not prove inference succeeds. Supplied keys still need valid account permissions, quota and network access. Do not use credentials pasted into chat or source code; revoke and rotate them immediately.
+
+## Google Cloud deployment
+
+Firestore is authoritative for all application data. Cloud Run hosts the API and Next.js; Firebase Hosting provides the public HTTPS entry point. Cloud Scheduler runs durable review jobs independently of the API. The production image has no SQLAlchemy, Alembic or PostgreSQL dependency.
+
+```bash
+export GOOGLE_CLOUD_PROJECT=agies-bank
+export DEPLOY_MODE=demo
+bash scripts/deploy-google.sh
+```
+
+Run the one-time owner setup first, with an enabled `AGIES_SECRET` version and optional `OPENROUTER_API_KEY` in Secret Manager. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the currently observed external blockers. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
 
 ## Demo sign-ins
 
@@ -62,13 +79,15 @@ These credentials are intentionally public synthetic demo credentials. Productio
 - **Financial health:** proactive scoped tools review posted activity, cash flow, budget pressure, subscriptions, identity status, affordability and savings plans.
 - **Savings goals:** manual planning progress, target dates, contribution estimates and pause/completion controls; goals never debit or reserve money.
 - **Durable agents:** persistent queue, event deduplication, atomic leases, bounded retries/crash recovery, tool scopes, decision summaries and run visibility. Agents propose; financial mutations remain governed.
-- **Assistant:** balance/spend/budget/affordability/policy tools, Claude/OpenAI loops, exact citations and consent-required payment proposals.
+- **Assistant:** balance/spend/budget/affordability/policy tools, Gemini/Claude/OpenAI/OpenRouter loops, exact citations and consent-required payment proposals.
 - **Identity:** bounded ID/selfie uploads, evidence hashes, synthetic screening, transparent risk reasons and analyst review; optional model vision assists evidence quality without asserting legal identity or liveness.
 - **Document intelligence:** searchable PDF/text/Markdown/CSV upload, tenant isolation, grounded answers, exact source passages and preview.
 - **Recommendations:** loan and term-life rule explanations, eligible/blocked states and precise EMI calculations. No real credit or insurance is issued.
 - **Security:** statistical/amount/velocity/new-recipient signals, synthetic device/VPN/geo history, calculated impossible-travel checks, customer alerts, transfer holds and analyst cases.
 - **Analyst operations:** approve/reject with reasons, atomic balance rechecks, freeze/unfreeze, audit evidence, integration checks and explicitly confirmed shared-policy publication.
 - **Deployment safeguards:** expiring authenticated sessions, CSRF/origin checks, upload bounds, append-only ledger/audit guards, migrations, production configuration refusal, secure analyst provisioning and CI workflow.
+- **Automations:** configurable financial reviews, security watch, document readiness and savings coaching; enable/pause/run controls, durable schedules and run history.
+- **Google Cloud:** Firestore-primary storage, Cloud Run API/web/jobs, Firebase Hosting, scheduled recovery, distinct service identities, secure cookies and deny-by-default client rules.
 
 ## Demo journey
 
@@ -79,21 +98,22 @@ These credentials are intentionally public synthetic demo credentials. Productio
 5. Send a routine payment; a larger new-recipient payment asks for password re-authentication.
 6. Simulate impossible travel and a large payment in Security; funds are held before settlement.
 7. Sign in as the analyst, inspect the case and approve/reject it with a reason.
-8. Open Integrations, check configured AI access, and publish an approved shared bank policy for customer Q&A.
+8. Open Automations to schedule a security or savings review; inspect the trace and insights.
+9. As an analyst, open Operations to reconcile balances and inspect worker health; use Integrations for provider checks.
 
 ## Test and inspect
 
-Verified: **111 backend tests, 11 HTTP security checks and 14 browser journeys**. Browser journeys passed with SQLite and with the final Docker/PostgreSQL stack. View [Financial health](docs/images/financial-health.png) and [Integrations](docs/images/integrations.png) screenshots.
-
+The backend suite has passed both in isolation and against the actual Firestore emulator; Next.js has built successfully. See [validation](docs/VALIDATION.md) for current counts and separate browser, HTTP, live-cloud and container outcomes.
 
 ```bash
 make check
+make test-firestore
 backend/.venv/bin/python -m unittest discover -s tests/acceptance -v
 # With a fresh disposable demo API/web instance running:
 npm run test:e2e --prefix frontend
 ```
 
-The cloud image supplies Chromium. Elsewhere install a Playwright browser with `cd frontend` then `npx playwright install chromium`.
+Install a Playwright browser with `cd frontend` then `npx playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an installed compatible browser.
 
 Browser journeys change banking/security state and require a fresh synthetic database. Retained suspicious events correctly change later risk decisions; do not disable those safeguards to force a repeat test to pass. CI starts from an empty database. See [validation](docs/VALIDATION.md) for executed outcomes and limitations.
 

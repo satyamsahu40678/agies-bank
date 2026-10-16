@@ -8,7 +8,7 @@ DOTENV_VARIABLES = frozenset(
     {
         "AEGIS_ENV",
         "AEGIS_DEMO_ENABLED",
-        "AEGIS_SECRET",
+        "AGIES_SECRET",
         "AEGIS_ALLOWED_ORIGINS",
         "AEGIS_AI_MODE",
         "AEGIS_AI_PROVIDER",
@@ -19,7 +19,19 @@ DOTENV_VARIABLES = frozenset(
         "AEGIS_OPENAI_MODEL",
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_MODEL",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_MODEL",
+        "GOOGLE_CLOUD_PROJECT",
+        "FIRESTORE_DATABASE",
+        "FIRESTORE_AGENT_NOTIFICATIONS",
         "DATABASE_URL",
+        "AEGIS_STORAGE_BACKEND",
+        "FIRESTORE_EMULATOR_HOST",
+        "AEGIS_WORKER_ENABLED",
+        "AEGIS_SCHEDULER_TOKEN",
     }
 )
 
@@ -90,16 +102,29 @@ def openai_key_configured() -> bool:
 
 
 def _automatic_provider() -> str:
-    # With both keys, Claude wins predictably; explicit provider selection wins.
+    # Existing provider priority is stable; Gemini activates when it is the available key.
     if os.getenv("ANTHROPIC_API_KEY", "").strip():
         return "claude"
-    return "openai" if openai_key_configured() else "local"
+    if openai_key_configured():
+        return "openai"
+    if os.getenv("OPENROUTER_API_KEY", "").strip():
+        return "openrouter"
+    return "gemini" if gemini_key_configured() else "local"
+
+
+def gemini_key_configured() -> bool:
+    return bool(
+        os.getenv("GEMINI_API_KEY", "").strip()
+        or os.getenv("GOOGLE_API_KEY", "").strip()
+    )
 
 
 def resolve_mode(variable: str, *, default: str = "auto") -> str:
     requested = os.getenv(variable, default).strip().lower()
-    if requested not in {"auto", "local", "claude", "openai"}:
-        raise RuntimeError(f"{variable} must be auto, local, claude or openai")
+    if requested not in {"auto", "local", "claude", "openai", "gemini", "openrouter"}:
+        raise RuntimeError(
+            f"{variable} must be auto, local, claude, openai, gemini or openrouter"
+        )
     if requested == "auto":
         return _automatic_provider()
     return requested
@@ -113,13 +138,16 @@ def resolve_ai_mode() -> str:
 
 def resolve_kyc_mode() -> str:
     requested = os.getenv("AEGIS_KYC_VISION", "auto").strip().lower()
-    if requested == "auto" and "AEGIS_AI_PROVIDER" in os.environ:
-        return resolve_ai_mode()
+    if requested == "auto":
+        selected = resolve_ai_mode()
+        return selected if selected in {"claude", "openai", "gemini"} else "local"
+    if requested == "openrouter":
+        raise RuntimeError("AEGIS_KYC_VISION does not support openrouter; choose local, claude, openai, gemini or auto")
     return resolve_mode("AEGIS_KYC_VISION")
 
 
 ENV = os.getenv("AEGIS_ENV", "development")
-PRODUCTION = ENV == "production"
+PRODUCTION = ENV in {"production", "demo"}
 DEMO_ENABLED = (
     os.getenv("AEGIS_DEMO_ENABLED", "false" if PRODUCTION else "true").lower() == "true"
 )
@@ -128,7 +156,7 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://") :]
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://") :]
-SECRET = os.getenv("AEGIS_SECRET", "local-demo-secret-change-in-production")
+SECRET = os.getenv("AGIES_SECRET", "local-demo-secret-change-in-production")
 ALLOWED_ORIGINS = [
     x.strip()
     for x in os.getenv(
@@ -144,8 +172,13 @@ KYC_MODE = resolve_kyc_mode()
 
 
 def validate_configuration():
-    if ENV not in {"development", "test", "production"}:
-        raise RuntimeError("AEGIS_ENV must be development, test or production")
+    if ENV not in {"development", "test", "production", "demo"}:
+        raise RuntimeError("AEGIS_ENV must be development, test, demo or production")
+    storage = os.getenv("AEGIS_STORAGE_BACKEND", "firestore")
+    if storage not in {"firestore", "memory"}:
+        raise RuntimeError("AEGIS_STORAGE_BACKEND must be firestore or memory")
+    if storage == "firestore" and not os.getenv("GOOGLE_CLOUD_PROJECT", "").strip():
+        raise RuntimeError("Firestore requires GOOGLE_CLOUD_PROJECT")
     if (
         resolve_ai_mode() == "claude" or resolve_kyc_mode() == "claude"
     ) and not os.getenv("ANTHROPIC_API_KEY", "").strip():
@@ -156,8 +189,20 @@ def validate_configuration():
         raise RuntimeError(
             "OpenAI mode requires AEGIS_OPENAI_API_KEY (or the local OPENAI_API_KEY alias)"
         )
+    if (
+        resolve_ai_mode() == "gemini" or resolve_kyc_mode() == "gemini"
+    ) and not gemini_key_configured():
+        raise RuntimeError("Gemini mode requires GEMINI_API_KEY or GOOGLE_API_KEY")
+    if resolve_ai_mode() == "openrouter" and not os.getenv("OPENROUTER_API_KEY", "").strip():
+        raise RuntimeError("OpenRouter mode requires OPENROUTER_API_KEY")
+    if os.getenv("FIRESTORE_AGENT_NOTIFICATIONS", "false").lower() == "true" and not os.getenv(
+        "GOOGLE_CLOUD_PROJECT", ""
+    ).strip():
+        raise RuntimeError(
+            "Firestore agent notifications require GOOGLE_CLOUD_PROJECT"
+        )
     if PRODUCTION:
-        if DEMO_ENABLED:
+        if DEMO_ENABLED and ENV == "production":
             raise RuntimeError("Demo data and simulator must be disabled in production")
         if (
             len(SECRET) < 32
@@ -166,10 +211,10 @@ def validate_configuration():
             or SECRET.upper().startswith(("REPLACE_", "CHANGE_ME", "YOUR_SECRET"))
         ):
             raise RuntimeError(
-                "Production requires a strong AEGIS_SECRET of at least 32 characters"
+                "Production requires a strong AGIES_SECRET of at least 32 characters"
             )
-        if not DATABASE_URL.startswith("postgresql"):
-            raise RuntimeError("Production requires PostgreSQL DATABASE_URL")
+        if storage != "firestore" or os.getenv("FIRESTORE_EMULATOR_HOST"):
+            raise RuntimeError("Hosted environments require live Firestore, never memory or the emulator")
         if not ALLOWED_ORIGINS or any(
             not x.startswith("https://") or "*" in x for x in ALLOWED_ORIGINS
         ):

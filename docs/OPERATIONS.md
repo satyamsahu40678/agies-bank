@@ -1,92 +1,124 @@
-# Running and deploying AegisBank
+# Running and operating AegisBank
 
-## Development
-
-Run `make setup` once and after dependency changes, then `make dev`. The setup script uses a hash-pinned Python lock and npm lock; installation preserves TLS and artifact verification. Package caches use `/tmp` in the cloud sandbox. SQLite data defaults to `backend/data/aegis.db`. Do not delete that directory to troubleshoot a live instance; it contains accounts and audit history.
-
-If a port is occupied, inspect its owner before starting another instance. Stop only services you started. Environment variables override backend behavior; their values are read at startup.
-
-| Variable | Use |
-| --- | --- |
-| `DATABASE_URL` | SQLAlchemy URL; SQLite by default, `postgresql+psycopg://...` for deployment |
-| `AEGIS_ENV` | `development`, `test` or `production` |
-| `AEGIS_DEMO_ENABLED` | Enables synthetic seeded credentials/data and event simulator; must be false in production |
-| `AEGIS_SECRET` | Strong instance secret; required in production |
-| `AEGIS_ALLOWED_ORIGINS` | Comma-separated exact origins; explicit HTTPS origins in production |
-| `AEGIS_AI_MODE` | `auto` (default), `local`, `claude` or `openai` |
-| `AEGIS_AI_PROVIDER` | Preferred provider: auto/local/claude/openai; explicit local disables AI |
-| `AEGIS_OPENAI_API_KEY` | Optional OpenAI key; secure backend-only binding |
-| `AEGIS_OPENAI_MODEL` | Optional OpenAI model override; otherwise supported-model discovery |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Local aliases; use `AEGIS_OPENAI_API_KEY` for Codex cloud secret bindings |
-| `ANTHROPIC_API_KEY` | Optional Claude credential, supplied securely; never checked into source |
-| `ANTHROPIC_MODEL` | Supported Claude model ID |
-| `AEGIS_KYC_VISION` | `auto`, `local`, `claude` or `openai`; optional image-quality assistance, not biometric identity proof |
-| `API_INTERNAL_URL` | Next.js server proxy target; default backend on port 8000, set before Next build |
-
-Configure AI keys through secure environment settings or the ignored root `.env`. Explicit injected environment variables take precedence over that file. `AEGIS_AI_PROVIDER` takes precedence over the compatibility `AEGIS_AI_MODE` setting; with auto selection and both keys, Claude is preferred. Explicit `AEGIS_KYC_VISION` selects its provider independently, while its default auto mode follows an explicit assistant-provider choice. Set vision to `local` when external processing of identity evidence should be disabled.
-
-The Integrations page shows configured key presence and effective modes without revealing credentials. Its connection check reads model metadata without sending customer data or performing paid inference. Validate live assistant, source-grounded answers and optional vision separately after checking account permissions, credits and egress to `api.anthropic.com` or `api.openai.com`. No live model call was verified during development. Public customer and analyst credentials apply only to demo mode. Password re-authentication is a demo substitute for enrolled MFA.
-
-## Docker and PostgreSQL
-
-Copy `.env.example` to `.env` and replace both random-secret placeholders with distinct output from:
+## Quick local demo
 
 ```bash
-python3 -c 'import secrets; print(secrets.token_hex(32))'
+make setup
+make dev
 ```
 
-Never paste credentials into chat or commit `.env`. PostgreSQL passwords should be hex strings for this example so they need no URL escaping. Launch:
+Python dependencies are hash-locked; npm uses its committed lock. `make dev` and
+`python scripts/run-local.py --setup --open` explicitly default to ephemeral
+in-memory storage. Restarting that mode resets the demo. Use Docker Compose's
+persistent Firestore emulator, a manually started emulator, or a configured live
+Firestore development project when data must survive restarts.
 
 ```bash
 docker compose up --build -d
-docker compose ps
-docker compose logs --tail=80 api web
 ```
 
-Only the web gateway is bound to host loopback; the database and API are internal services. The web image embeds its API proxy target at build time. Persistent PostgreSQL data is in the named `postgres_data` volume. `docker compose down` stops processes while preserving data; **do not use `down -v` on retained data**.
+Compose starts a Firestore emulator plus API and Next.js. Only web port 3000 is
+bound to host loopback; emulator and API ports remain internal. Emulator exports
+are retained in `firestore_data`. `docker compose down` preserves the volume;
+`down -v` removes it. The first emulator start downloads Java/Firebase tooling.
+Docker requires a local Docker engine; native tests do not substitute for a
+container build.
 
-In a managed cloud with proxy-only egress, use `bash scripts/build-containers.sh` then `docker compose up -d`. It resolves the configured proxy hostname for the builder and mounts the supplied CA bundle as an ephemeral build secret. TLS checks and Python artifact hashes remain enabled. No proxy credential is printed or stored in the image. If Docker config paths are read-only, set `DOCKER_CONFIG=/tmp/aegis-docker-config` and `BUILDX_CONFIG=/tmp/aegis-buildx`.
+## Configuration
 
-## Production prerequisites
+| Setting | Behavior |
+| --- | --- |
+| `AEGIS_STORAGE_BACKEND` | `firestore` (runtime default) or explicit `memory` for development/tests |
+| `GOOGLE_CLOUD_PROJECT` | Required for Firestore |
+| `FIRESTORE_DATABASE` | Defaults to `(default)` |
+| `FIRESTORE_EMULATOR_HOST` | Local host:port only; forbidden in hosted mode |
+| `AEGIS_ENV` | `development`, `test`, `demo`, `production` |
+| `AEGIS_DEMO_ENABLED` | Synthetic identities and simulator; forbidden in production |
+| `AGIES_SECRET` | Canonical application secret; at least 32 characters in hosted mode |
+| `AEGIS_ALLOWED_ORIGINS` | Explicit allowed origins; HTTPS only in hosted mode |
+| `AEGIS_AI_PROVIDER` | `auto`, `local`, `openrouter`, `gemini`, `openai`, `claude` |
+| `OPENROUTER_API_KEY` | Optional backend-only key; default model `openrouter/free` |
+| `AEGIS_WORKER_ENABLED` | Enables development polling; false in hosted services |
 
-Set `AEGIS_ENV=production`, `AEGIS_DEMO_ENABLED=false`, a random `AEGIS_SECRET`, a PostgreSQL URL and your explicit HTTPS origin in `AEGIS_ALLOWED_ORIGINS`. The API refuses insecure production defaults. Terminate TLS through a managed gateway or reverse proxy in front of the loopback web port. Preserve `Origin`, secure cookies and forwarding semantics. Do not expose raw database ports or trust arbitrary client IP headers.
+The root `.env` is ignored by Git and loaded through an allowlist without shell
+execution. Injected environment values win. A live local Firestore process can
+use ADC or `GOOGLE_APPLICATION_CREDENTIALS` pointing outside the checkout.
+Cloud Run uses its service identity and should never carry a JSON key file.
+Provider keys must not reach the browser environment or source archives.
 
-The Compose file's defaults are a local demo, not a production deployment recipe with real banking providers. Provision an analyst securely using the backend admin CLI after migrations. Public self-registration creates only customers. Supply real integrations for identity, sanctions, bureau, payment settlement and MFA before any real financial operation. Review data retention, privacy requirements, key management, access revocation and operational controls for your jurisdiction.
+## Schema, import and reconciliation
 
-Use one controlled schema-migration job before scaling API replicas; do not run parallel migrations across workers. The current head includes `0002_proactive` for agent runs, financial insights and savings goals. Production startup checks the database revision against the repository's current head and refuses an outdated schema. Record migration versions, perform migrations on a restored staging copy first, and back up before destructive migrations. Database-level audit access must be protected separately; append-only triggers do not prevent a privileged database owner from changing the guards.
+The runtime needs no relational engine. The production image deliberately
+excludes SQLAlchemy, Alembic and PostgreSQL drivers. Legacy tools are installed
+with `backend/requirements-dev.lock` and only run explicitly. Preserve any old
+SQLite source and follow [cloud setup](CLOUD_SETUP.md) for read-only import and
+offline cutover. Never run the importer while application writers are active.
 
-Use a fresh production database: startup refuses a database containing public synthetic demo identities and preserves those records. Production registration reserves the demo email domain. Production does not seed sample policies; private customer uploads work, and analysts can publish shared policies in the Integrations screen after explicit public-sharing confirmation. Publish only approved information suitable for every customer. Shared policy text supplies Q&A evidence and does not change executable lending, payment or approval rules. Uploaded text is retained in the database, so include it in backup, retention and access reviews.
-
-After setting production configuration, migrate and provision an analyst before API startup:
+With Firestore configured and writers stopped:
 
 ```bash
-docker compose run --rm api python -m app.manage migrate
-docker compose run --rm api python -m app.manage create-analyst --email analyst@your-domain.example --name 'Risk Analyst'
-docker compose up -d
+cd backend
+.venv/bin/python -m app.manage migrate
+.venv/bin/python -m app.manage reconcile
 ```
 
-Analyst provisioning prompts for a strong password without echoing it. Automation can send a value from a secret manager on stdin with `--password-stdin`; do not put it in arguments or shell history.
+Initialization validates references, constraints and unique values, checks every
+account against its posted ledger and requires global double-entry conservation.
+It backfills unique reservations without overwriting bank documents, then writes
+schema version 2. Hosted startup requires this marker. Reconciliation reports
+mismatches; it never repairs a balance automatically.
 
-## Backup, recovery and diagnostics
+Create a non-demo analyst with `python -m app.manage create-analyst --email ...
+--name ...`; the command prompts for a strong password and only stores its hash.
+A public registration request cannot assign the analyst role or an opening
+balance.
 
-For PostgreSQL use a managed backup service or `pg_dump` from a secured admin session. Keep encrypted backups off the application host and test `pg_restore` to an isolated database. Do not echo passwords or full database URLs into CI logs. A backup is useful only after a restoration test.
+## Agent operations
 
-For local SQLite, stop API processes before copying `backend/data` or use SQLite's online backup API. Preserve WAL consistency. Local demo data should never be used as a production starting balance.
+Jobs, schedules, retry state, insights and decision summaries are durable
+Firestore records. `python -m app.manage worker --max-jobs 50` dispatches due
+schedules and drains a bounded queue. Cloud Scheduler executes this as a finite
+Cloud Run job every five minutes. Manual review endpoints also wake a bounded
+background task. A crash leaves a leased job recoverable; an expired fencing
+token cannot commit its output. Automatic attempts stop after three by default;
+customers may request up to three explicit retry cycles for a failed review.
 
-Readiness requires `/api/health` to report a healthy database and an actual application request to work. Monitor API failures, settlement conflicts, held funds, open cases, model failures and request latency. Review decision summaries with their trace IDs; never collect raw passwords, session cookies, identity numbers, model secrets or hidden chain-of-thought. Live provider failures must fail visibly rather than fabricate a successful financial action.
+The customer Automations page controls four review types. Pausing a schedule
+prevents future dispatches; a job already queued continues. Removing a schedule
+does not erase its prior run or audit history. The analyst Operations page shows
+reconciliation, job counts and expired leases. Operational checks themselves do
+not move funds.
 
-Optional vision sends uploaded ID/selfie evidence to the selected AI provider; those files can contain personal information. Review customer consent, provider data handling, retention and network access before enabling it for real documents. Limited readability/name-consistency observations cannot authenticate documents, match faces, establish liveness or verify legal identity.
+## Validation
 
-## Proactive agents and local AI configuration
+```bash
+make check
+make test-firestore
+backend/.venv/bin/python -m unittest discover -s tests/acceptance -v
+# With a fresh disposable API and web process running:
+npm run test:e2e --prefix frontend
+```
 
-The root `.env` is read by a supported-variable allowlist without shell execution; injected environment variables take precedence. Adding an Anthropic or OpenAI key with auto mode selects that provider. Restart the backend after changing keys/modes. API keys are never passed to browser code or returned by integration status. No paid live model request is claimed until tested with your supplied account.
+The Firestore test script starts a hash-verified official emulator and runs the
+same complete suite against it. Fixture projects are isolated; it never contacts
+a live Firestore database. Browser tests intentionally alter demo risk state and
+require a fresh fixture. Keep known risk checks enabled rather than clearing
+suspicious evidence to make a rerun pass. See [validation](VALIDATION.md) for the
+checks actually executed in this revision.
 
-A durable financial-health queue runs in the API lifecycle. Login and banking activity enqueue read-only tasks in their database transaction. Customer-scoped tools, event deduplication and atomically claimed leases govern execution; runs and outputs survive process restarts. PostgreSQL serializes work for one customer across API replicas. Expired leases recover, stale tokens cannot commit completion and failures roll back outputs. Automatic retries stop after three attempts; customers can request up to three explicit retry cycles from a failed run. An idle worker uses an interruptible wait rather than a busy loop.
+## Hosted operations and recovery
 
-Inspect Financial health for queued/running/completed/failed runs, tool names, concise decisions and trace IDs. Long-lived queued jobs or expired running leases indicate worker/database trouble; check API lifecycle and database connectivity before retrying. Refresh coalesces pending work and creates a fresh run after prior work finishes. Financial totals and budget usage cover complete posted activity over 30 days. Recurring-charge forecasts examine at most 10,000 entries over 120 days and are estimates, not billing guarantees.
+Use `scripts/bootstrap-google.sh` for owner provisioning and
+`scripts/deploy-google.sh` for the reviewed Firestore deployment. The latter
+checks prerequisites before builds, binds Secret Manager values, schedules the
+worker and verifies the public gateway. It does not create an authorized billing
+association or grant its own missing IAM privileges. Use a maintenance window
+with writers stopped when validating/cutting over existing data.
 
-Savings goals record customer-entered targets, saved progress and deadlines. Monthly contribution suggestions use historical surplus across all active plans. They do not debit, reserve or hold funds, and do not prove the customer has segregated savings. The worker cannot settle transfers, alter budgets, approve identity, freeze accounts or release holds. PostgreSQL claims, crash recovery, bounded retries and unchanged financial balances were verified; SQLite remains the simple local path.
-
-The Python launcher supports `--setup --open` and avoids external preview routing: it starts on your computer loopback, checks ports, preserves injected configuration and terminates its own service groups. Its Linux execution is tested; Windows/macOS require the stated Python/Node prerequisites and platform-specific execution verification.
-
-For custom local ports, use `--api-port` and `--web-port`. If `.env` or the environment already defines `AEGIS_ALLOWED_ORIGINS`, include the selected `http://localhost:PORT` web origin there. The launcher preserves explicit origins and refuses a mismatch.
+Configure Firestore exports/PITR as appropriate, test restoration to an isolated
+target, preserve a separately protected audit archive, and monitor Cloud Run
+errors, worker failures, Scheduler invocations, Firestore contention and cost.
+The repository does not claim that backups or monitoring have been provisioned.
+Rotate credentials through the provider and Secret Manager; do not log their
+values. Build contexts exclude credentials, `.env`, databases and conversation
+attachments.

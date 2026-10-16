@@ -1,6 +1,6 @@
 # API contract (v1)
 
-All paths below are prefixed `/api`. API errors use HTTP errors with a readable `detail`. Session auth uses HttpOnly cookie `aegis_session`. Client fetch uses credentials and for non-GET requests sends `X-CSRF-Token` from login/session responses. Development frontend proxies `/api` to backend on 8000. JSON responses use snake_case. Amounts are INR decimal strings; requests can send decimal strings/numbers, API uses integer paise internally. Synthetic demo users: `customer@aegis.demo` / `AegisDemo!2026` and `analyst@aegis.demo` / `AegisAnalyst!2026`.
+All paths below are prefixed `/api`. API errors use HTTP errors with a readable `detail`. Session auth uses HttpOnly cookie `__session`. Client fetch uses credentials and for non-GET requests sends `X-CSRF-Token` from login/session responses. Development frontend proxies `/api` to backend on 8000. JSON responses use snake_case. Amounts are INR decimal strings; requests can send decimal strings/numbers, API uses integer paise internally. Synthetic demo users: `customer@aegis.demo` / `AegisDemo!2026` and `analyst@aegis.demo` / `AegisAnalyst!2026`.
 
 ## Authentication
 
@@ -47,6 +47,7 @@ Paginate/limit stored history in backend; consistent default arrays for empty re
 
 - `GET /insights` -> `{items:[{id,kind,severity,title,message,action_label,action_path,status,metrics,created_at,updated_at}],summary:{...},latest_run}`; initial summary may be empty while a durable run is queued.
 - `POST /insights/refresh` -> AgentRun, HTTP202; coalesces pending work and permits a fresh review after completion.
+- `GET /notifications/agents` -> `{source:'database'|'firestore',items:[...]}` scoped to the signed-in customer. Firestore is an optional projection of derived agent alerts; SQL remains authoritative and is used as fallback when Firestore is disabled or unavailable.
 - `POST /insights/{id}/dismiss` -> insight; only the owning customer can dismiss it.
 - `GET /agent-runs` -> owned run list with status, attempts, max_attempts, tools, decisions, trace_id, output, error and timestamps. Jobs are read-only financial reviews, never transfer execution.
 - `POST /agent-runs/{id}/retry` -> AgentRun, HTTP202; only failed owned runs, bounded manual retries.
@@ -55,9 +56,30 @@ Paginate/limit stored history in backend; consistent default arrays for empty re
 - `PATCH /goals/{id} {name?,target_amount?,saved_amount?,target_date?,status?}` -> goal; active/paused/completed states.
 - `DELETE /goals/{id}` -> `{deleted:true}`. These are planning records; all create/update/delete operations preserve ledger entries and account balances.
 - `GET /documents/{id}/content` -> `{document,pages:[{page,text}]}`: exact indexed source passages, customer/private or shared policy only. Long pages may include overlapping chunks.
-- `GET /analyst/integrations` -> `{ai_mode,kyc_mode,providers:[{id,name,status,integrated,mode,credential_configured,model,model_selection,endpoints,capabilities,limitations,requirements}],disclaimer}`. Credential values never appear.
-- `POST /analyst/integrations/claude/check` and `/analyst/integrations/openai/check` -> `{status,configured,model,checked_at,message,error_code?,scope:'model_access'}`. Non-destructive model access check; it does not prove paid inference or real financial operations.
+- `GET /analyst/integrations` -> `{ai_mode,kyc_mode,providers:[{id,name,status,integrated,mode,credential_configured,model,model_selection,endpoints,capabilities,limitations,requirements}],firestore:{agent_notifications_enabled,project_configured,database},disclaimer}`. Credential values never appear.
+- `POST /analyst/integrations/{claude|openai|gemini|openrouter}/check` -> `{status,configured,model,checked_at,message,error_code?,scope}`. Non-destructive provider/model-catalog check; it does not prove inference availability or real financial operations.
 - `GET /analyst/documents` -> shared bank policies only.
 - `POST /analyst/documents` multipart `{file,title,confirmed_public:true}` -> shared policy, HTTP201. Analyst role, valid CSRF and explicit public-sharing confirmation required. This publishes Q&A knowledge; it does not change lending/payment policy rules.
 
 Web routes added: `/insights` and `/analyst/integrations`. All mutation endpoints require session auth and `X-CSRF-Token`; CORS explicitly supports PATCH/DELETE for planning operations.
+
+
+## Firestore workflows and operations
+
+| Method | Path | Scope / behavior |
+| --- | --- | --- |
+| GET | `/automations` | Customer workflow catalog and own schedules |
+| PUT | `/automations` | Upsert own `{kind, interval_hours, enabled}` schedule; 1–168 hours |
+| POST | `/automations/{id}/run` | Queue enabled owned workflow; returns 202 and run |
+| DELETE | `/automations/{id}` | Remove own schedule; retain prior jobs/audit |
+| GET | `/analyst/operations` | Analyst-only ledger reconciliation and job/lease counts |
+
+Kinds: `financial_health`, `security_review`, `document_review`, `savings_coach`.
+These workflows produce read-only guidance. Pausing does not cancel an already
+queued job. Mutation routes require session CSRF and Origin checks. Unknown
+workflow kinds, invalid intervals and extra fields are rejected. Foreign schedule
+IDs return 404. A bounded optimistic conflict returns a retryable 409 without
+partial writes; clients must retain the transfer idempotency key when retrying.
+`/health` reports the actual storage adapter. Hosted cookies use Secure HttpOnly
+`__session` to pass through Firebase Hosting; session values never appear in logs.
+Document uploads are bounded to 300 extracted chunks per atomic write.

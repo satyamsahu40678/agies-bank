@@ -37,13 +37,14 @@ if args.setup:
     if not python.exists():
         subprocess.run([sys.executable, '-m', 'venv', str(ROOT / 'backend/.venv')], check=True)
     subprocess.run([str(python), '-m', 'ensurepip', '--upgrade'], check=True)
-    subprocess.run([str(python), '-m', 'pip', 'install', '--require-hashes', '-r', 'requirements.lock'], cwd=ROOT/'backend', check=True)
+    subprocess.run([str(python), '-m', 'pip', 'install', '--require-hashes', '-r', 'requirements-dev.lock'], cwd=ROOT/'backend', check=True)
     subprocess.run([npm, 'ci', '--no-audit', '--no-fund'], cwd=ROOT/'frontend', check=True)
 if not python.exists() or not (ROOT/'frontend/node_modules').exists():
     raise SystemExit('Dependencies are missing. Run this launcher with --setup.')
 # Reuse the backend's allowlisted .env reader so explicit origins are preserved.
 # This module only uses the standard library; it does not start the API.
 runpy.run_path(str(ROOT/'backend/app/config.py'))
+os.environ.setdefault('AEGIS_STORAGE_BACKEND', 'memory')
 local_origin = f'http://localhost:{args.web_port}'
 allowed_origins = os.environ.get('AEGIS_ALLOWED_ORIGINS')
 if allowed_origins and local_origin not in {origin.strip() for origin in allowed_origins.split(',')}:
@@ -71,7 +72,7 @@ try:
     env = dict(os.environ)
     env['API_INTERNAL_URL'] = f'http://127.0.0.1:{args.api_port}'
     env.setdefault('AEGIS_ALLOWED_ORIGINS', f'http://localhost:{args.web_port},http://127.0.0.1:{args.web_port}')
-    web_env = {key:value for key,value in env.items() if key not in {'ANTHROPIC_API_KEY','AEGIS_OPENAI_API_KEY','OPENAI_API_KEY'}}
+    web_env = {key:value for key,value in env.items() if key not in {'ANTHROPIC_API_KEY','AEGIS_OPENAI_API_KEY','OPENAI_API_KEY','OPENROUTER_API_KEY','GEMINI_API_KEY','GOOGLE_API_KEY','AGIES_SECRET','GOOGLE_APPLICATION_CREDENTIALS'}}
     children.append(subprocess.Popen([str(python), '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', str(args.api_port)], cwd=ROOT/'backend', env=env, stdout=api_log, stderr=api_log, **kwargs))
     children.append(subprocess.Popen([node, str(ROOT/'frontend/node_modules/next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', str(args.web_port)], cwd=ROOT/'frontend', env=web_env, stdout=web_log, stderr=web_log, **kwargs))
     deadline = time.monotonic()+55

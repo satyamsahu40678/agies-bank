@@ -5,9 +5,7 @@ import getpass
 from pathlib import Path
 import re
 import sys
-from alembic.config import Config
-from alembic import command
-from sqlalchemy import select
+from .query import select
 from .config import ROOT, validate_configuration
 from .db import SessionLocal
 from .models import User
@@ -18,6 +16,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("migrate")
+    sub.add_parser("reconcile")
+    worker = sub.add_parser("worker")
+    worker.add_argument("--max-jobs", type=int, default=50)
+    sub.add_parser("migrate-legacy-sql")
     admin = sub.add_parser("create-analyst")
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", required=True)
@@ -25,8 +27,31 @@ def main():
     args = parser.parse_args()
     validate_configuration()
     if args.action == "migrate":
+        from .maintenance import initialize_store
+
+        print(initialize_store())
+    elif args.action == "reconcile":
+        from .maintenance import reconcile
+
+        with SessionLocal() as db:
+            report = reconcile(db)
+        print(report)
+        if not report["ok"]:
+            raise SystemExit(1)
+    elif args.action == "worker":
+        from .services.automations import dispatch_due
+        from .services.proactive import process_next
+
+        dispatch_due()
+        for _ in range(max(1, min(200, args.max_jobs))):
+            if not process_next():
+                break
+    elif args.action == "migrate-legacy-sql":
+        from alembic.config import Config
+        from alembic import command
+
         command.upgrade(Config(str(ROOT / "alembic.ini")), "head")
-        print("Database migrated to latest revision.")
+        print("Legacy SQL migrated. Application storage remains Firestore.")
     else:
         email = args.email.strip().lower()
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
