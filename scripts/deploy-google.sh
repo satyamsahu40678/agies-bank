@@ -38,7 +38,7 @@ common_job_args=(
   --region "$region"
   --project "$project"
   --service-account "$service_account"
-  --set-secrets DATABASE_URL=DATABASE_URL:latest,AEGIS_SECRET=AEGIS_SECRET:latest
+  --set-secrets DATABASE_URL=DATABASE_URL:latest,AGIES_SECRET=AGIES_SECRET:latest
   --set-env-vars "AEGIS_ENV=production,AEGIS_DEMO_ENABLED=false,AEGIS_ALLOWED_ORIGINS=https://${project}.web.app,GOOGLE_CLOUD_PROJECT=${project}"
   --add-cloudsql-instances "$cloud_sql_instance"
 )
@@ -52,7 +52,7 @@ if ! gcloud firestore databases describe --database='(default)' --project "$proj
     --project="$project"
 fi
 
-api_secrets=(DATABASE_URL=DATABASE_URL:latest AEGIS_SECRET=AEGIS_SECRET:latest)
+api_secrets=(DATABASE_URL=DATABASE_URL:latest AGIES_SECRET=AGIES_SECRET:latest)
 for optional_secret in GEMINI_API_KEY ANTHROPIC_API_KEY AEGIS_OPENAI_API_KEY OPENROUTER_API_KEY; do
   if gcloud secrets describe "$optional_secret" --project "$project" >/dev/null 2>&1; then
     api_secrets+=("${optional_secret}=${optional_secret}:latest")

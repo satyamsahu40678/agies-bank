@@ -8,7 +8,7 @@ DOTENV_VARIABLES = frozenset(
     {
         "AEGIS_ENV",
         "AEGIS_DEMO_ENABLED",
-        "AEGIS_SECRET",
+        "AGIES_SECRET",
         "AEGIS_ALLOWED_ORIGINS",
         "AEGIS_AI_MODE",
         "AEGIS_AI_PROVIDER",
@@ -152,7 +152,7 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://") :]
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://") :]
-SECRET = os.getenv("AEGIS_SECRET", "local-demo-secret-change-in-production")
+SECRET = os.getenv("AGIES_SECRET", "local-demo-secret-change-in-production")
 ALLOWED_ORIGINS = [
     x.strip()
     for x in os.getenv(
@@ -202,7 +202,7 @@ def validate_configuration():
             or SECRET.upper().startswith(("REPLACE_", "CHANGE_ME", "YOUR_SECRET"))
         ):
             raise RuntimeError(
-                "Production requires a strong AEGIS_SECRET of at least 32 characters"
+                "Production requires a strong AGIES_SECRET of at least 32 characters"
             )
         if not DATABASE_URL.startswith("postgresql"):
             raise RuntimeError("Production requires PostgreSQL DATABASE_URL")

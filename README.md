@@ -27,7 +27,7 @@ make setup
 make dev
 ```
 
-For Docker Desktop/PostgreSQL, copy `.env.example` to `.env`, generate distinct random `POSTGRES_PASSWORD` and `AEGIS_SECRET`, then run `docker compose up --build -d`. See [operations](docs/OPERATIONS.md) for proxy-aware builds and production requirements.
+For Docker Desktop/PostgreSQL, copy `.env.example` to `.env`, generate distinct random `POSTGRES_PASSWORD` and `AGIES_SECRET`, then run `docker compose up --build -d`. See [operations](docs/OPERATIONS.md) for proxy-aware builds and production requirements.
 
 ## Add Gemini, Claude, OpenAI or OpenRouter
 
@@ -56,7 +56,7 @@ The analyst **Integrations** page shows implemented adapters, effective modes an
 
 The Google stack is wired as follows: Gemini provides model-assisted tool routing and source-grounded answers; Firestore optionally carries a server-side projection of derived agent alerts; PostgreSQL/Cloud SQL remains authoritative for accounts, balances, transfers, audit, and job state; Cloud Run hosts the API and Next.js app; Firebase Hosting supplies the public HTTPS/CDN URL and rewrites traffic to Cloud Run. Cloud Run accesses Firestore through its service identity. No service-account JSON key is required or accepted by the deployment script.
 
-After creating Cloud SQL, a Firestore Native database, a dedicated Cloud Run service account and Secret Manager secrets named `DATABASE_URL` and `AEGIS_SECRET` (optionally `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `AEGIS_OPENAI_API_KEY` or `OPENROUTER_API_KEY`), grant that service account Cloud SQL Client, Secret Manager Secret Accessor and Datastore User. `DATABASE_URL` must use the Cloud SQL Unix socket path. Then run from Cloud Shell with `gcloud`, Docker build services and authenticated Firebase CLI configured:
+After creating Cloud SQL, a Firestore Native database, a dedicated Cloud Run service account and Secret Manager secrets named `DATABASE_URL` and `AGIES_SECRET` (optionally `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `AEGIS_OPENAI_API_KEY` or `OPENROUTER_API_KEY`), grant that service account Cloud SQL Client, Secret Manager Secret Accessor and Datastore User. `DATABASE_URL` must use the Cloud SQL Unix socket path. Then run from Cloud Shell with `gcloud`, Docker build services and authenticated Firebase CLI configured:
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-project-id
@@ -67,6 +67,8 @@ bash scripts/deploy-google.sh
 ```
 
 The script migrates the database before deploying and prints the Firebase Hosting prototype URL when successful. Resource creation, billing, Secret Manager values, Firebase project access, domain configuration and a public deployment are not performed by local tests. Rotate the leaked service-account key before provisioning; use Cloud Shell ADC and the dedicated runtime identity instead of that key file.
+
+Firestore is currently only an optional notification projection; the application still uses SQLAlchemy for its authoritative data. The requested Firestore-primary migration and SQLite import are in progress and are not ready for deployment yet. See [cloud setup](docs/CLOUD_SETUP.md) for the safe importer status and instructions.
 
 ## Demo sign-ins
 

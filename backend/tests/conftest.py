@@ -11,7 +11,7 @@ os.environ.update(
         "AEGIS_ENV": "test",
         "AEGIS_DEMO_ENABLED": "true",
         "DATABASE_URL": "sqlite://",
-        "AEGIS_SECRET": "aegis-test-session-secret-never-use-in-production",
+        "AGIES_SECRET": "agies-test-session-secret-never-use-in-production",
         "AEGIS_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000",
         "AEGIS_AI_PROVIDER": "local",
         "AEGIS_AI_MODE": "local",

@@ -47,7 +47,7 @@ def test_versioned_schema_migration_repeatability_and_immutability(tmp_path):
 @pytest.mark.parametrize(
     "updates",
     [
-        {"AEGIS_SECRET": "short"},
+        {"AGIES_SECRET": "short"},
         {"AEGIS_DEMO_ENABLED": "true"},
         {"DATABASE_URL": "sqlite:///bad.db"},
         {"AEGIS_ALLOWED_ORIGINS": "http://localhost:3000"},
@@ -59,7 +59,7 @@ def test_production_configuration_fails_closed(updates):
         "PYTHONPATH": str(ROOT),
         "AEGIS_ENV": "production",
         "DATABASE_URL": "postgresql+psycopg://synthetic:unused@localhost/aegis",
-        "AEGIS_SECRET": "a" * 40,
+        "AGIES_SECRET": "a" * 40,
         "AEGIS_ALLOWED_ORIGINS": "https://aegis.example",
         "AEGIS_DEMO_ENABLED": "false",
         "AEGIS_AI_MODE": "local",

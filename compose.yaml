@@ -22,7 +22,7 @@ services:
       DATABASE_URL: postgresql+psycopg://aegisbank:${POSTGRES_PASSWORD}@database:5432/aegisbank
       AEGIS_ENV: ${AEGIS_ENV:-development}
       AEGIS_DEMO_ENABLED: ${AEGIS_DEMO_ENABLED:-true}
-      AEGIS_SECRET: ${AEGIS_SECRET:?Set AEGIS_SECRET in .env}
+      AGIES_SECRET: ${AGIES_SECRET:?Set AGIES_SECRET in .env}
       AEGIS_ALLOWED_ORIGINS: ${AEGIS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       AEGIS_AI_PROVIDER: ${AEGIS_AI_PROVIDER:-auto}
       AEGIS_AI_MODE: ${AEGIS_AI_MODE:-auto}
