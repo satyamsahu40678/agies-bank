@@ -76,6 +76,7 @@ def test_provider_metadata_and_checks_never_expose_credentials(analyst, monkeypa
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
+        "OPENROUTER_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     metadata = analyst.get("/api/analyst/integrations")
@@ -94,11 +95,39 @@ def test_provider_metadata_and_checks_never_expose_credentials(analyst, monkeypa
         not in analyst.get("/api/analyst/integrations").text
     )
     monkeypatch.delenv("ANTHROPIC_API_KEY")
-    for provider in ("claude", "openai", "gemini"):
+    for provider in ("claude", "openai", "gemini", "openrouter"):
         result = analyst.post(f"/api/analyst/integrations/{provider}/check")
         assert result.status_code == 200, result.text
         assert result.json()["status"] == "unconfigured"
         assert result.json()["configured"] is False
+
+
+def test_openrouter_connection_check_is_analyst_only_and_secret_safe(
+    analyst, customer, monkeypatch
+):
+    from app.services import providers
+    import httpx
+
+    secret = "synthetic-openrouter-key"
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"data": []})
+            ),
+            **kwargs,
+        ),
+    )
+    result = analyst.post("/api/analyst/integrations/openrouter/check")
+    assert result.status_code == 200
+    assert result.json()["status"] == "ok"
+    assert secret not in result.text
+    assert customer.post("/api/analyst/integrations/openrouter/check").status_code == 403
+    assert analyst.get("/api/analyst/integrations/openrouter/check").status_code == 405
 
 
 def test_gemini_provider_metadata_and_connection_check_are_secret_safe(

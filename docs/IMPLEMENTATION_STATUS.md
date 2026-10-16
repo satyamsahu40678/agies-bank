@@ -1,6 +1,6 @@
 # Implemented, configured and remaining work
 
-The linked conversation could not be retrieved. Scope comes from the uploaded deck plus the user's subsequent decisions, including explicit approval to use banking/identity mocks and support both Claude and OpenAI.
+Scope comes from the uploaded deck and the attached conversation, including approval to use banking/identity mocks and support Gemini, Claude, OpenAI and OpenRouter.
 
 ## Implemented workflows
 
@@ -18,12 +18,12 @@ The linked conversation could not be retrieved. Scope comes from the uploaded de
 | Financial health | Posted-ledger cash flow, budget warnings, subscription observations, safe guidance and dismissible insights |
 | Savings goals | Create/edit/pause/remove manual planning goals, progress and monthly contribution estimates; goal changes never move money |
 | Analyst knowledge | Explicitly confirmed publication of bank policies shared with customers; role checks and audit evidence |
-| Integrations | Gemini/Claude/OpenAI selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
+| Integrations | Gemini/Claude/OpenAI/OpenRouter selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
 | Operations | Native launcher, cross-platform local launcher, Docker/PostgreSQL, Cloud Run/Firebase deployment tooling, migrations, production guards, secure analyst provisioning and CI workflow |
 
 ## What an AI key enables
 
-A Gemini, Anthropic or OpenAI key enables the implemented model-assisted chat/tool loop, grounded document answers and limited KYC image assessment. Selection and model names are configurable and local mode remains available. Financial policy, settlement, identity authority and permissions remain server-governed; model output cannot bypass them.
+A Gemini, Anthropic, OpenAI or OpenRouter key enables the implemented model-assisted chat/tool loop and grounded document answers. Gemini, Anthropic and OpenAI also support limited KYC image assessment. Selection and model names are configurable and local mode remains available. Financial policy, settlement, identity authority and permissions remain server-governed; model output cannot bypass them.
 
 Model-assisted KYC assesses legibility, person presence and name consistency. It is not legal identity proof, liveness, biometric matching or an authoritative sanctions decision. Stored decisions and tool records are summaries, not hidden chain-of-thought.
 
@@ -37,6 +37,7 @@ To operate with real customers and money, provider-specific agreements/APIs, san
 
 ## Other limits and next steps
 
+- Firestore-primary migration is in progress. The importer foundation can copy SQLite rows into Firestore, but application services still use SQLAlchemy; a Firestore-only deployment is not yet supported. Keep the SQLite database and do not switch the production runtime until transaction/query paths and the full import are verified.
 - Local retrieval uses lexical ranking, not learned production embeddings/vector search.
 - Image-only/scanned PDFs require OCR before document ingestion.
 - Voice/multilingual banking and regulatory-reporting agents are deck next steps.

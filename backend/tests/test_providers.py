@@ -30,6 +30,8 @@ def clean_provider_env(monkeypatch):
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_MODEL",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_MODEL",
     ]:
         monkeypatch.delenv(name, raising=False)
     providers._model_cache.clear()
@@ -45,7 +47,7 @@ def test_dotenv_loads_only_supported_settings_and_injected_values_win(tmp_path):
 export ANTHROPIC_API_KEY="synthetic-local-key" # never displayed
 ANTHROPIC_MODEL='claude-sonnet-test'
 AEGIS_AI_MODE=auto # comment
-AEGIS_SECRET='literal-$HOME-$(ignored)'
+AGIES_SECRET='literal-$HOME-$(ignored)'
 DATABASE_URL=sqlite:///local.db
 PATH=/hostile/bin
 PYTHONPATH=/hostile
@@ -57,7 +59,7 @@ AEGIS_UNSUPPORTED=unexpected
     assert environment["ANTHROPIC_API_KEY"] == "injected-key"
     assert environment["AEGIS_AI_MODE"] == "auto"
     assert environment["ANTHROPIC_MODEL"] == "claude-sonnet-test"
-    assert environment["AEGIS_SECRET"] == "literal-$HOME-$(ignored)"
+    assert environment["AGIES_SECRET"] == "literal-$HOME-$(ignored)"
     assert (
         not {"PATH", "PYTHONPATH", "HTTPS_PROXY", "AEGIS_UNSUPPORTED"}
         & environment.keys()
@@ -84,12 +86,63 @@ def test_auto_modes_activate_with_key_and_explicit_local_wins(
     assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "claude"
     monkeypatch.setenv("AEGIS_AI_MODE", "local")
     assert config.resolve_ai_mode() == "local"
-    assert config.resolve_kyc_mode() == "claude"
+    assert config.resolve_kyc_mode() == "local"
     monkeypatch.setenv("AEGIS_KYC_VISION", "local")
     assert config.resolve_kyc_mode() == "local"
     monkeypatch.setenv("AEGIS_AI_MODE", "unsupported")
-    with pytest.raises(RuntimeError, match="auto, local, claude, openai or gemini"):
+    with pytest.raises(RuntimeError, match="auto, local, claude, openai, gemini or openrouter"):
         config.resolve_ai_mode()
+
+
+def test_openrouter_auto_selection_model_override_and_kyc_exclusion(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    assert config.resolve_ai_mode() == "openrouter"
+    assert config.resolve_kyc_mode() == "local"
+    assert providers.resolve_openrouter_model() == "openrouter/free"
+    monkeypatch.setenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    assert providers.resolve_openrouter_model() == "openai/gpt-4o-mini"
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "local")
+    assert config.resolve_ai_mode() == "local"
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("AEGIS_KYC_VISION", "openrouter")
+    with pytest.raises(RuntimeError, match="does not support openrouter"):
+        config.resolve_kyc_mode()
+    monkeypatch.setenv("OPENROUTER_MODEL", "../invalid")
+    with pytest.raises(HTTPException, match="OPENROUTER_MODEL"):
+        providers.resolve_openrouter_model()
+
+
+def test_openrouter_connection_check_uses_model_catalog_without_exposing_key(
+    clean_provider_env, monkeypatch
+):
+    secret = "synthetic-openrouter-key"
+    assert providers.check_openrouter()["status"] == "unconfigured"
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert request.method == "GET"
+        assert request.url.path == "/api/v1/models"
+        assert request.headers["Authorization"] == f"Bearer {secret}"
+        return httpx.Response(200, json={"data": []})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(handle), **kwargs
+        ),
+    )
+    result = providers.check_openrouter()
+    assert result["status"] == "ok"
+    assert result["model"] == "openrouter/free"
+    assert len(calls) == 1
+    assert secret not in str(result)
 
 
 def test_gemini_key_auto_selection_model_discovery_and_check(clean_provider_env, monkeypatch):
@@ -204,6 +257,65 @@ def test_gemini_chat_uses_scoped_tools_and_hides_customer_identifiers(
     assert "synthetic@example.test" not in json.dumps(payloads)
     assert "123456789012" not in json.dumps(payloads)
     assert payloads[0]["tools"][0]["functionDeclarations"]
+
+
+def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
+    intelligence_db, clean_provider_env, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    secret = "synthetic-openrouter-key"
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
+    payloads = []
+
+    def handle(request):
+        assert request.url.path == "/api/v1/chat/completions"
+        assert request.headers["Authorization"] == f"Bearer {secret}"
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        if len(payloads) == 1:
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_balance",
+                        "type": "function",
+                        "function": {"name": "get_balance", "arguments": "{}"},
+                    }
+                ],
+            }
+        else:
+            message = {
+                "role": "assistant",
+                "content": "Your available balance is INR 20000.00.",
+            }
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(handle), **kwargs
+        ),
+    )
+    result = ai.chat(
+        db,
+        user,
+        "Synthetic Customer at synthetic@example.test, ID 123456789012: show my balance",
+    )
+    assert result["ai_mode"] == "openrouter"
+    assert result["tools"][0]["name"] == "get_balance"
+    assert "INR 20000.00" in result["reply"]
+    assert secret not in str(result)
+    assert len(payloads) == 2
+    assert payloads[0]["model"] == "openrouter/free"
+    assert "get_balance" in str(payloads[0]["tools"])
+    sent = json.dumps(payloads)
+    assert "synthetic@example.test" not in sent
+    assert "123456789012" not in sent
 
 
 def test_gemini_document_answers_require_and_return_exact_citations(

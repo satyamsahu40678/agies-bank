@@ -14,7 +14,8 @@ __pycache__/
 *.db-wal
 .env
 .env.local
-agies-bank-29d360794a62.json
+agies-bank-*.json
+/chat.json
 data/
 logs/
 *.log

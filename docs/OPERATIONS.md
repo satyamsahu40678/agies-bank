@@ -11,21 +11,25 @@ If a port is occupied, inspect its owner before starting another instance. Stop 
 | `DATABASE_URL` | SQLAlchemy URL; SQLite by default, `postgresql+psycopg://...` for deployment |
 | `AEGIS_ENV` | `development`, `test` or `production` |
 | `AEGIS_DEMO_ENABLED` | Enables synthetic seeded credentials/data and event simulator; must be false in production |
-| `AEGIS_SECRET` | Strong instance secret; required in production |
+| `AGIES_SECRET` | Strong instance secret; required in production |
 | `AEGIS_ALLOWED_ORIGINS` | Comma-separated exact origins; explicit HTTPS origins in production |
-| `AEGIS_AI_MODE` | `auto` (default), `local`, `claude` or `openai` |
-| `AEGIS_AI_PROVIDER` | Preferred provider: auto/local/claude/openai; explicit local disables AI |
+| `AEGIS_AI_MODE` | Compatibility setting: `auto` (default), `local`, `claude`, `openai`, `gemini` or `openrouter` |
+| `AEGIS_AI_PROVIDER` | Preferred provider: auto/local/claude/openai/gemini/openrouter; explicit local disables AI |
 | `AEGIS_OPENAI_API_KEY` | Optional OpenAI key; secure backend-only binding |
 | `AEGIS_OPENAI_MODEL` | Optional OpenAI model override; otherwise supported-model discovery |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Local aliases; use `AEGIS_OPENAI_API_KEY` for Codex cloud secret bindings |
 | `ANTHROPIC_API_KEY` | Optional Claude credential, supplied securely; never checked into source |
 | `ANTHROPIC_MODEL` | Supported Claude model ID |
-| `AEGIS_KYC_VISION` | `auto`, `local`, `claude` or `openai`; optional image-quality assistance, not biometric identity proof |
+| `GEMINI_API_KEY`, `GOOGLE_API_KEY` | Optional Gemini credential and local alias |
+| `GEMINI_MODEL` | Optional Gemini model override; otherwise supported-model discovery |
+| `OPENROUTER_API_KEY` | Optional OpenRouter key for chat/tool orchestration and document synthesis |
+| `OPENROUTER_MODEL` | Optional OpenRouter model ID; defaults to `openrouter/free` |
+| `AEGIS_KYC_VISION` | `auto`, `local`, `claude`, `openai` or `gemini`; optional image-quality assistance, not biometric identity proof |
 | `API_INTERNAL_URL` | Next.js server proxy target; default backend on port 8000, set before Next build |
 
-Configure AI keys through secure environment settings or the ignored root `.env`. Explicit injected environment variables take precedence over that file. `AEGIS_AI_PROVIDER` takes precedence over the compatibility `AEGIS_AI_MODE` setting; with auto selection and both keys, Claude is preferred. Explicit `AEGIS_KYC_VISION` selects its provider independently, while its default auto mode follows an explicit assistant-provider choice. Set vision to `local` when external processing of identity evidence should be disabled.
+Configure AI keys through secure environment settings or the ignored root `.env`. Explicit injected environment variables take precedence over that file. `AEGIS_AI_PROVIDER` takes precedence over the compatibility `AEGIS_AI_MODE` setting; auto mode selects Claude, OpenAI, OpenRouter, then Gemini. OpenRouter supports assistant tools and grounded document answers, but is not used for identity evidence. Explicit `AEGIS_KYC_VISION` selects Claude, OpenAI or Gemini independently; its default auto mode follows those supported providers and otherwise stays local. Set vision to `local` when external processing of identity evidence should be disabled.
 
-The Integrations page shows configured key presence and effective modes without revealing credentials. Its connection check reads model metadata without sending customer data or performing paid inference. Validate live assistant, source-grounded answers and optional vision separately after checking account permissions, credits and egress to `api.anthropic.com` or `api.openai.com`. No live model call was verified during development. Public customer and analyst credentials apply only to demo mode. Password re-authentication is a demo substitute for enrolled MFA.
+The Integrations page shows configured key presence and effective modes without revealing credentials. Its connection check reads provider model/catalog metadata without sending customer data or performing paid inference. Validate live assistant, source-grounded answers and optional vision separately after checking account permissions, credits and egress to the selected provider (`api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com` or `openrouter.ai`). OpenRouter route availability and free-model tool support may change. Public customer and analyst credentials apply only to demo mode. Password re-authentication is a demo substitute for enrolled MFA.
 
 ## Docker and PostgreSQL
 
@@ -49,7 +53,7 @@ In a managed cloud with proxy-only egress, use `bash scripts/build-containers.sh
 
 ## Production prerequisites
 
-Set `AEGIS_ENV=production`, `AEGIS_DEMO_ENABLED=false`, a random `AEGIS_SECRET`, a PostgreSQL URL and your explicit HTTPS origin in `AEGIS_ALLOWED_ORIGINS`. The API refuses insecure production defaults. Terminate TLS through a managed gateway or reverse proxy in front of the loopback web port. Preserve `Origin`, secure cookies and forwarding semantics. Do not expose raw database ports or trust arbitrary client IP headers.
+Set `AEGIS_ENV=production`, `AEGIS_DEMO_ENABLED=false`, a random `AGIES_SECRET`, a PostgreSQL URL and your explicit HTTPS origin in `AEGIS_ALLOWED_ORIGINS`. The API refuses insecure production defaults. Terminate TLS through a managed gateway or reverse proxy in front of the loopback web port. Preserve `Origin`, secure cookies and forwarding semantics. Do not expose raw database ports or trust arbitrary client IP headers.
 
 The Compose file's defaults are a local demo, not a production deployment recipe with real banking providers. Provision an analyst securely using the backend admin CLI after migrations. Public self-registration creates only customers. Supply real integrations for identity, sanctions, bureau, payment settlement and MFA before any real financial operation. Review data retention, privacy requirements, key management, access revocation and operational controls for your jurisdiction.
 
@@ -83,7 +87,7 @@ The root `.env` is read by a supported-variable allowlist without shell executio
 
 A durable financial-health queue runs in the API lifecycle. Login and banking activity enqueue read-only tasks in their database transaction. Customer-scoped tools, event deduplication and atomically claimed leases govern execution; runs and outputs survive process restarts. PostgreSQL serializes work for one customer across API replicas. Expired leases recover, stale tokens cannot commit completion and failures roll back outputs. Automatic retries stop after three attempts; customers can request up to three explicit retry cycles from a failed run. An idle worker uses an interruptible wait rather than a busy loop.
 
-For Google Cloud, deploy with `scripts/deploy-google.sh` after creating Cloud SQL, Firestore Native, Secret Manager secrets `DATABASE_URL` and `AEGIS_SECRET`, and a dedicated Cloud Run service identity. Grant it Cloud SQL Client, Secret Manager Secret Accessor, and Datastore User. Store Gemini under `GEMINI_API_KEY` in Secret Manager to activate it automatically. Set `GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE=(default)` and `FIRESTORE_AGENT_NOTIFICATIONS=true`; Firestore receives only derived insight notifications. The relational database remains authoritative. Firebase Hosting rewrites to the `aegis-web` Cloud Run service, and direct Firestore client access is denied by `firestore.rules`.
+For Google Cloud, deploy with `scripts/deploy-google.sh` after creating Cloud SQL, Firestore Native, Secret Manager secrets `DATABASE_URL` and `AGIES_SECRET`, and a dedicated Cloud Run service identity. Grant it Cloud SQL Client, Secret Manager Secret Accessor, and Datastore User. Store Gemini under `GEMINI_API_KEY` in Secret Manager to activate it automatically. Set `GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE=(default)` and `FIRESTORE_AGENT_NOTIFICATIONS=true`; Firestore receives only derived insight notifications. The relational database remains authoritative. Firebase Hosting rewrites to the `aegis-web` Cloud Run service, and direct Firestore client access is denied by `firestore.rules`.
 
 Inspect Financial health for queued/running/completed/failed runs, tool names, concise decisions and trace IDs. Long-lived queued jobs or expired running leases indicate worker/database trouble; check API lifecycle and database connectivity before retrying. Refresh coalesces pending work and creates a fresh run after prior work finishes. Financial totals and budget usage cover complete posted activity over 30 days. Recurring-charge forecasts examine at most 10,000 entries over 120 days and are estimates, not billing guarantees.
 
