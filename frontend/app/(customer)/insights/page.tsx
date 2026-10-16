@@ -284,7 +284,7 @@ export default function InsightsPage() {
         action={
           <Button
             variant="secondary"
-            disabled={refreshing || hasPendingRun || !runs.data || !insights.data}
+            disabled={refreshing || !runs.data || !insights.data}
             onClick={refreshAnalysis}
           >
             {refreshing ? (
@@ -471,7 +471,7 @@ export default function InsightsPage() {
                   >
                     <Button
                       variant="secondary"
-                      disabled={refreshing || hasPendingRun || !runs.data || !insights.data}
+                      disabled={refreshing || !runs.data || !insights.data}
                       onClick={refreshAnalysis}
                     >
                       <RefreshCw size={14} />

@@ -46,7 +46,7 @@ jobs:
       - name: Start production web and API
         run: |
           mkdir -p logs
-          (cd backend && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../logs/api.log 2>&1) &
+          (cd backend && AEGIS_WORKER_ENABLED=false .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../logs/api.log 2>&1) &
           (cd frontend && npm run start > ../logs/web.log 2>&1) &
           python3 scripts/wait_ready.py http://127.0.0.1:8000/api/health http://127.0.0.1:3000/login
       - name: Browser journeys

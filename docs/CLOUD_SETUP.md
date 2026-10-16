@@ -6,26 +6,35 @@ are Firestore documents. SQLAlchemy/Alembic are isolated legacy import tools and
 are absent from the production dependency lock. No Cloud SQL instance or
 `DATABASE_URL` is required to deploy the application.
 
-The target branch is `feat/deployment-and-enhance`. The intended public entry
+The deployment branch is `main`. The intended public entry
 point is Firebase Hosting, which forwards to the Next.js Cloud Run service.
 Next.js proxies `/api` to the API Cloud Run service. The `__session` HttpOnly,
 Secure cookie survives Firebase Hosting forwarding. Direct client access to
 Firestore is denied; server code uses its runtime service identity.
 
-## Current external prerequisites
+## Live deployment
 
-The supplied credential authenticated to project `agies-bank`. Its `(default)`
-Firestore Native database exists in `nam5`; a read-only inventory found no
-collections. The credential could read project metadata but could not enable
-APIs or inspect `AGIES_SECRET` versions. The Cloud Run API was disabled. IAM
-checks also found no Artifact Registry repository-creation or Cloud Scheduler
-job-creation permission. A successful local or emulator test is not a live
-rollout. No enabled secret version or billing association has been confirmed.
+The synthetic demo is hosted at [agies-bank.web.app](https://agies-bank.web.app).
+The deployment branch is `main`; its merge contains the complete tested
+Firestore migration. Cloud Build built the API and web images, Cloud Run hosts
+them, and Firebase Hosting forwards the public HTTPS requests to the web service.
 
-The historical 99-row SQLite file mentioned in the earlier migration report is
-not in Git or among the supplied files. It has not been copied to the live
-project. Use the clean demo path below, or provide that original file and follow
-the offline cutover procedure before enabling writers.
+Owner setup completed for project `agies-bank`: the required APIs, distinct
+runtime/build/scheduler identities, and enabled `AGIES_SECRET` and
+`OPENROUTER_API_KEY` versions were verified. The runtime successfully loaded the
+secrets without exposing their values. A real OpenRouter `openrouter/free`
+request called the scoped balance tool and returned an answer from Firestore.
+
+The `(default)` Firestore Native database is in `nam5`. Schema version 2 was
+initialized on the previously empty target, and demo startup created synthetic
+records. The historical 99-row SQLite file mentioned in the earlier migration
+report is not in Git or among the supplied files and has not been imported.
+Do not import historical records over the seeded demo. Use an isolated target
+and the offline cutover procedure below for that source.
+
+The finite `aegis-worker` job is deployed in `us-central1`, and
+`aegis-agent-tick` invokes it every five minutes with the scheduler identity.
+See [validation](VALIDATION.md) for the executed hosted checks and their limits.
 
 ## One-time project setup
 

@@ -1,25 +1,30 @@
 # Verification evidence
 
-This revision was verified with synthetic records and local provider mode.
+Verification uses synthetic records, local provider fixtures and the live OpenRouter configuration. Hosted checks use the actual Firebase URL.
 The authoritative-storage tests use the actual official Firestore emulator,
 not a SQL database disguised as Firestore.
 
 | Check | Executed outcome |
 | --- | --- |
-| Complete backend suite, explicit memory adapter | 147 passed |
-| Complete backend suite, actual Firestore emulator | 147 passed |
+| Complete backend suite, explicit memory adapter | 152 passed |
+| Complete backend suite, actual Firestore emulator | 152 passed |
 | Independent real-HTTP security acceptance on Firestore emulator | 11 passed |
 | Production Next.js build and TypeScript validation | Passed, including Automations and analyst Operations |
 | Chromium browser journeys against production Next.js + Firestore emulator | 16 passed, including mobile navigation, schedules, ledger results, KYC, document citations and analyst controls |
+| Hosted-worker behavior regression on production Next.js | Savings and financial-review journeys passed with the polling worker disabled; a queued review can be woken manually |
 | Fresh installation of the production-only hash lock | Passed; complete app imports and configuration validates without SQLAlchemy installed |
 | Runtime Python dependency audit | No known vulnerabilities reported |
 | npm dependency audit | 0 vulnerabilities reported |
 | New datastore/workflow source lint, Python/JSON syntax, shell syntax and whitespace | Passed |
 | SQLite export → native Firestore domain → schema initialization → ledger reconciliation | Passed against the emulator, with the source hash unchanged |
 | Live Google Cloud credential and project read | Authenticated to `agies-bank`; default Firestore database exists |
-| Live public rollout and hosted smoke check | Pending external API/IAM/Secret Manager prerequisites; no verified public URL yet |
-| Docker image builds / Compose execution | Not run here: no Docker engine available |
-| Live model inference | Not run; provider protocols and scope boundaries are mocked |
+| Live public rollout and hosted smoke check | Passed at https://agies-bank.web.app: Firestore health, secure cookie forwarding, customer APIs, role isolation and logout |
+| GitHub CI on merged `main` | Passed: [run 38978165811](https://github.com/satyamsahu40678/agies-bank/actions/runs/38978165811) |
+| Cloud Scheduler → authenticated Cloud Run job → due workflow | Passed: document readiness review completed with scoped tools; test schedule paused afterward |
+| Initial hosted browser suite | 12 passed; three cases identified a queued-review UI block and two OpenRouter response-contract failures; corrections and focused retest in progress |
+| Cloud Build API and web Docker images | Both built and deployed successfully |
+| Local Docker Compose execution | Not run: no local Docker engine available |
+| Live model inference | OpenRouter `openrouter/free` catalog access and a real `get_balance` tool response passed; document and assistant contract corrections are being retested |
 
 One existing Starlette/httpx deprecation warning remains. The isolated developer
 venv initially carried stale dependency metadata; a fresh production-lock
@@ -70,7 +75,11 @@ with a fresh synthetic fixture because they intentionally create fraud evidence
 and change demo state. Existing risk evidence must not be removed to force an
 unsafe repeat payment to pass.
 
-Live IAM, billing, enabled secret versions, Cloud Build image creation, Firebase
-cookie forwarding and Cloud Scheduler invocation still require a real rollout.
-The deployment script includes those checks and a hosted demo smoke test. This
-file records local/emulator evidence separately from that external work.
+Live IAM, enabled secret bindings, Cloud Build image creation, Firebase cookie
+forwarding and authenticated Scheduler invocation were verified during the
+Google Cloud rollout. The target was empty before initialization, so this is a
+fresh synthetic demo rather than an import of the unavailable historical SQLite
+file. The public gateway and scoped balance inference passed. The initial hosted
+browser run also exposed conditions that the local polling-worker fixture did
+not reproduce. CI now disables that worker for browser tests, matching hosted
+mode, and the affected flows are being retested after the correction.

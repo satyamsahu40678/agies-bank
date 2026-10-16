@@ -2,6 +2,8 @@
 
 A runnable, governed agentic banking application with customer and analyst workspaces, configurable **OpenRouter, Gemini, Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
 
+Open the [hosted demo](https://agies-bank.web.app) and choose **Customer demo** or **Analyst demo**. Deployment and further changes use `main`.
+
 Banking, identity/sanctions, bureau and geo/device providers use explicit synthetic adapters, as requested. No real money moves. AI keys enable the implemented model-assisted capabilities; they do not establish a real bank or legal identity-provider connection.
 
 ![AegisBank customer overview](docs/images/dashboard.png)
@@ -11,7 +13,7 @@ Banking, identity/sanctions, bureau and geo/device providers use explicit synthe
 Install **Python 3.12+** and **Node.js 24 LTS** (includes npm). Then:
 
 ```bash
-git clone --branch feat/deployment-and-enhance https://github.com/satyamsahu40678/agies-bank.git
+git clone --branch main https://github.com/satyamsahu40678/agies-bank.git
 cd agies-bank
 python scripts/run-local.py --setup --open
 ```
@@ -62,7 +64,7 @@ export DEPLOY_MODE=demo
 bash scripts/deploy-google.sh
 ```
 
-Run the one-time owner setup first, with an enabled `AGIES_SECRET` version and optional `OPENROUTER_API_KEY` in Secret Manager. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the currently observed external blockers. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
+Run the one-time owner setup first, with an enabled `AGIES_SECRET` version and optional `OPENROUTER_API_KEY` in Secret Manager. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the deployment verification record. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
 
 ## Demo sign-ins
 

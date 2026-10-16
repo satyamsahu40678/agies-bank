@@ -16,7 +16,7 @@ permissions:
   id-token: write
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/feat/deployment-and-enhance'
+    if: github.ref == 'refs/heads/main'
     environment: google-cloud
     runs-on: ubuntu-latest
     timeout-minutes: 45

@@ -9,7 +9,7 @@ for url in sys.argv[1:]:
     last_error = None
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=3) as response:
+            with urllib.request.urlopen(url, timeout=10) as response:
                 payload = response.read()
                 assert response.status == 200
                 if url.endswith('/api/health'):

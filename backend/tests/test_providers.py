@@ -314,6 +314,11 @@ def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
     assert len(payloads) == 2
     assert payloads[0]["model"] == "openrouter/free"
     assert "get_balance" in str(payloads[0]["tools"])
+    assert payloads[0]["tool_choice"] == {
+        "type": "function", "function": {"name": "get_balance"}
+    }
+    assert payloads[0]["provider"]["require_parameters"] is True
+    assert payloads[1]["tool_choice"] == "auto"
     sent = json.dumps(payloads)
     assert "synthetic@example.test" not in sent
     assert "123456789012" not in sent
@@ -1262,3 +1267,106 @@ def test_budget_spending_combines_case_variants_without_losing_amounts(intellige
     context = ai.ToolContext(db, user, "case-aggregate-test", ai.CUSTOMER_SCOPES)
     budget = ai.REGISTRY.invoke("get_budgets", context, {})["budgets"][0]
     assert budget["spent"] == "20010.00"
+
+
+@pytest.mark.parametrize("fenced", [False, True])
+def test_openrouter_document_answer_uses_strict_schema_and_scoped_sources(
+    intelligence_db, clean_provider_env, monkeypatch, fenced
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+
+    def handle(request):
+        payload = json.loads(request.content)
+        specification = payload["response_format"]["json_schema"]
+        assert payload["response_format"]["type"] == "json_schema"
+        assert specification["strict"] is True
+        assert specification["schema"]["additionalProperties"] is False
+        assert specification["schema"]["properties"]["citation_numbers"]["items"][
+            "enum"
+        ] == [1]
+        assert payload["provider"]["require_parameters"] is True
+        assert payload["reasoning"] == {"effort": "low", "exclude": True}
+        assert "OBSIDIAN" not in json.dumps(payload)
+        text = json.dumps(
+            {"answer": "The annual loan rate is 10.75% [1].", "citation_numbers": [1]}
+        )
+        if fenced:
+            text = "```json\n" + text + "\n```"
+        return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.query_documents(db, user, "What is the loan rate?")
+    assert result["ai_mode"] == "openrouter"
+    assert "10.75%" in result["answer"]
+    assert result["citations"][0]["page"] == 2
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        json.dumps({"answer": "Invented source [99].", "citation_numbers": [99]}),
+        "",
+    ],
+)
+def test_openrouter_document_answer_rejects_unknown_sources_and_empty_output(
+    intelligence_db, clean_provider_env, monkeypatch, content
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {"message": {"content": content}, "finish_reason": "length"}
+                        ]
+                    },
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        ai.query_documents(db, user, "What is the loan rate?")
+    assert error.value.status_code == 503
+
+
+def test_openrouter_cannot_answer_account_facts_without_a_fresh_tool_result(
+    intelligence_db, clean_provider_env, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "choices": [{"message": {"content": "Your balance is 999."}}]
+                    },
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        ai.chat(db, user, "What is my available balance?")
+    assert error.value.status_code == 503
+    assert "required scoped banking tool" in str(error.value.detail)

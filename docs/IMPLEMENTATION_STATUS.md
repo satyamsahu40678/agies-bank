@@ -28,7 +28,7 @@ A Gemini, Anthropic, OpenAI or OpenRouter key enables the implemented model-assi
 
 Model-assisted KYC assesses legibility, person presence and name consistency. It is not legal identity proof, liveness, biometric matching or an authoritative sanctions decision. Stored decisions and tool records are summaries, not hidden chain-of-thought.
 
-No live AI key was supplied during development. Provider protocol behavior is tested with mocked responses; paid inference, account permissions, billing and real model behavior require verification using your configured account. The analyst connection check verifies model access without sending customer data or claiming paid inference worked.
+OpenRouter was enabled through Secret Manager during the live rollout. Its catalog check and a real `get_balance` tool-call response passed using `openrouter/free`. Other provider protocols remain covered by mocked responses. The analyst connection check verifies catalog access; a successful inference is recorded separately in VALIDATION.md.
 
 ## Explicitly mocked by the user's decision
 
@@ -38,14 +38,13 @@ To operate with real customers and money, provider-specific agreements/APIs, san
 
 ## Other limits and next steps
 
-- Firestore-primary runtime and emulator verification are implemented. Historical rows cannot be copied without the original SQLite source. Live deployment remains subject to the Cloud API/IAM/Secret Manager prerequisites recorded in CLOUD_SETUP.md.
+- Firestore-primary runtime, emulator verification and the Google Cloud/Firebase rollout are implemented. The deployment branch is `main`. The hosted app uses clean synthetic records; historical rows cannot be copied without the original SQLite source.
 - Local retrieval uses lexical ranking, not learned production embeddings/vector search.
 - Image-only/scanned PDFs require OCR before document ingestion.
 - Voice/multilingual banking and regulatory-reporting agents are deck next steps.
 - Goal progress is entered by the customer as a planning record, not bank-reserved funds.
 - Device/network history is synthetic rather than an attested real GeoIP or device feed.
-- Backups, restore drills, HTTPS, provider-specific secrets, monitoring, access reviews and privacy/retention controls must be configured for a real deployment.
-- Remote GitHub CI and production hosting are distinct from local tests. Do not treat a saved cloud draft or started local process as a published public deployment.
-- This cloud session cannot control your personal computer. The local launcher lets you run the app there; a permanent hosted URL requires an authorized hosting account.
+- HTTPS and Secret Manager bindings are configured for the hosted demo. Backups, restore drills, operational alerts, access reviews and privacy/retention controls remain production operational work.
+- Remote GitHub CI, native Firestore verification and live deployment evidence are recorded separately in VALIDATION.md. The hosted demo is available at https://agies-bank.web.app; the local launcher remains available for development.
 
 See VALIDATION.md for executed evidence, OPERATIONS.md for deployment details and API_CONTRACT.md for API behavior.
