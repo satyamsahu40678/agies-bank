@@ -1031,6 +1031,15 @@ def process_next(factory=SessionLocal):
                     trace_id=run.trace_id,
                 )
                 db.commit()
+    else:
+        try:
+            from .firestore_notifications import publish_run
+
+            publish_run(factory, run_id)
+        except Exception as exc:
+            logger.warning(
+                "Firestore notification publishing failed (%s).", type(exc).__name__
+            )
     return True
 
 

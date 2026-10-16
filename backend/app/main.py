@@ -1311,6 +1311,13 @@ def financial_insights(user=Depends(customer), db=Depends(get_db)):
     return list_insights(db, user)
 
 
+@app.get("/api/notifications/agents")
+def agent_notifications(user=Depends(customer), db=Depends(get_db)):
+    from .services.firestore_notifications import list_notifications
+
+    return list_notifications(db, user)
+
+
 @app.post("/api/insights/refresh", status_code=202)
 def refresh_financial_insights(user=Depends(customer), db=Depends(get_db)):
     from .services.proactive import refresh_insights
@@ -1418,6 +1425,40 @@ def verify_openai_integration(user=Depends(analyst), db=Depends(get_db)):
         "orchestrator",
         "provider_connection_checked",
         f"OpenAI connection check: {result['status']}; no financial action performed",
+        ["provider_models_read"],
+    )
+    db.commit()
+    return result
+
+
+@app.post("/api/analyst/integrations/gemini/check")
+def verify_gemini_integration(user=Depends(analyst), db=Depends(get_db)):
+    from .services.providers import check_gemini
+
+    result = check_gemini()
+    audit(
+        db,
+        user.id,
+        "orchestrator",
+        "provider_connection_checked",
+        f"Gemini connection check: {result['status']}; no financial action performed",
+        ["provider_models_read"],
+    )
+    db.commit()
+    return result
+
+
+@app.post("/api/analyst/integrations/openrouter/check")
+def verify_openrouter_integration(user=Depends(analyst), db=Depends(get_db)):
+    from .services.providers import check_openrouter
+
+    result = check_openrouter()
+    audit(
+        db,
+        user.id,
+        "orchestrator",
+        "provider_connection_checked",
+        f"OpenRouter connection check: {result['status']}; no financial action performed",
         ["provider_models_read"],
     )
     db.commit()

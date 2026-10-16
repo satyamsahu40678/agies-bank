@@ -18,12 +18,12 @@ The linked conversation could not be retrieved. Scope comes from the uploaded de
 | Financial health | Posted-ledger cash flow, budget warnings, subscription observations, safe guidance and dismissible insights |
 | Savings goals | Create/edit/pause/remove manual planning goals, progress and monthly contribution estimates; goal changes never move money |
 | Analyst knowledge | Explicitly confirmed publication of bank policies shared with customers; role checks and audit evidence |
-| Integrations | Claude/OpenAI selection, automatic activation from supplied keys, read-only model-access checks and truthful adapter status |
-| Operations | Native launcher, cross-platform local launcher, Docker/PostgreSQL, migrations, production guards, secure analyst provisioning and CI workflow |
+| Integrations | Gemini/Claude/OpenAI selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
+| Operations | Native launcher, cross-platform local launcher, Docker/PostgreSQL, Cloud Run/Firebase deployment tooling, migrations, production guards, secure analyst provisioning and CI workflow |
 
 ## What an AI key enables
 
-An Anthropic or OpenAI key enables the implemented model-assisted chat/tool loop, grounded document answers and limited KYC image assessment. Selection is configurable and local mode remains available. Financial policy, settlement, identity authority and permissions remain server-governed; model output cannot bypass them.
+A Gemini, Anthropic or OpenAI key enables the implemented model-assisted chat/tool loop, grounded document answers and limited KYC image assessment. Selection and model names are configurable and local mode remains available. Financial policy, settlement, identity authority and permissions remain server-governed; model output cannot bypass them.
 
 Model-assisted KYC assesses legibility, person presence and name consistency. It is not legal identity proof, liveness, biometric matching or an authoritative sanctions decision. Stored decisions and tool records are summaries, not hidden chain-of-thought.
 
@@ -31,7 +31,7 @@ No live AI key was supplied during development. Provider protocol behavior is te
 
 ## Explicitly mocked by the user's decision
 
-Core-bank settlement, KYC/sanctions vendors, credit bureau and geolocation/device providers remain synthetic, self-contained adapters. The app works end to end in this mode, with no real money moved or real loan issued. A Claude or OpenAI key does not turn these into real financial providers.
+Core-bank settlement, KYC/sanctions vendors, credit bureau and geolocation/device providers remain synthetic, self-contained adapters. The app works end to end in this mode, with no real money moved or real loan issued. An LLM key does not turn these into real financial providers.
 
 To operate with real customers and money, provider-specific agreements/APIs, sandbox verification, webhook signatures/idempotency, customer consent, regulatory review, reconciliation and operational security are separate required work. Production MFA requires an enrolled second-factor provider or WebAuthn/TOTP implementation; the current password challenge is labelled a demo substitute.
 

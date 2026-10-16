@@ -17,6 +17,7 @@ from app.models import (
     utcnow,
 )
 from app.services import proactive as p
+from app.services import firestore_notifications as firestore
 
 
 def customer_user(db):
@@ -168,6 +169,56 @@ def test_enqueue_deduplicates_and_stale_reads_reuse_fresh_completed_run(db_facto
         assert result["summary"]["net_cashflow"] == "45480.50"
         assert result["summary"]["monthly_emi_capacity"] == "15918.17"
         assert all("No money" not in row["title"] for row in result["items"])
+
+
+def test_firestore_notifications_are_post_commit_and_customer_ids_are_hashed(
+    db_factory, monkeypatch
+):
+    monkeypatch.setenv("FIRESTORE_AGENT_NOTIFICATIONS", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    writes = []
+
+    def firestore_request(path, payload):
+        writes.append((path, payload))
+        return {}
+
+    monkeypatch.setattr(firestore, "_request", firestore_request)
+    with db_factory() as db:
+        user = customer_user(db)
+        raw_user_id = user.id
+        run = p.enqueue_health_check(db, user, "login", "firestore-projection-test")
+        run_id = run.id
+        db.commit()
+
+    assert p.process_next(db_factory)
+    assert writes and writes[0][0] == ":commit"
+    serialized = str(writes[0][1])
+    assert raw_user_id not in serialized
+    assert "/agent_notifications/" in serialized
+    with db_factory() as db:
+        completed = db.get(AgentRun, run_id)
+        assert completed.status == "completed"
+
+
+def test_firestore_projection_failure_does_not_fail_completed_agent_run(
+    db_factory, monkeypatch
+):
+    monkeypatch.setenv("FIRESTORE_AGENT_NOTIFICATIONS", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setattr(
+        firestore,
+        "_request",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("private failure text")),
+    )
+    with db_factory() as db:
+        run = p.enqueue_health_check(db, customer_user(db), "login", "firestore-failure-test")
+        run_id = run.id
+        db.commit()
+    assert p.process_next(db_factory)
+    with db_factory() as db:
+        completed = db.get(AgentRun, run_id)
+        assert completed.status == "completed"
+        assert completed.error is None
 
 
 def test_concurrent_claims_never_duplicate_or_parallelize_one_customer(db_factory):

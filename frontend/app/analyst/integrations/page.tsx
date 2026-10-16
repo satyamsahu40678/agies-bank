@@ -43,9 +43,14 @@ type Provider = {
   requirements: string[];
 };
 type Readiness = {
-  ai_mode: "local" | "claude" | "openai";
-  kyc_mode: "local" | "claude" | "openai";
+  ai_mode: "local" | "claude" | "openai" | "gemini" | "openrouter";
+  kyc_mode: "local" | "claude" | "openai" | "gemini";
   providers: Provider[];
+  firestore: {
+    agent_notifications_enabled: boolean;
+    project_configured: boolean;
+    database: string;
+  };
   disclaimer: string;
 };
 type ConnectionCheck = {
@@ -86,7 +91,9 @@ export default function IntegrationsPage() {
   const titleRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function checkConnection(provider: "claude" | "openai") {
+  async function checkConnection(
+    provider: "claude" | "openai" | "gemini" | "openrouter",
+  ) {
     if (checking) return;
     setChecking(true);
     setCheckError("");
@@ -203,7 +210,7 @@ export default function IntegrationsPage() {
                 <p className="eyebrow">EXPLICIT CONNECTION BOUNDARIES</p>
                 <h2>
                   {readiness.data.ai_mode !== "local"
-                    ? `${readiness.data.ai_mode === "openai" ? "OpenAI" : "Claude"} is selected. Banking stays governed.`
+                    ? `${readiness.data.ai_mode === "openai" ? "OpenAI" : readiness.data.ai_mode === "gemini" ? "Gemini" : readiness.data.ai_mode === "openrouter" ? "OpenRouter" : "Claude"} is selected. Banking stays governed.`
                     : "A complete local workflow. A clear path to live AI."}
                 </h2>
                 <p>{readiness.data.disclaimer}</p>
@@ -213,7 +220,7 @@ export default function IntegrationsPage() {
               <div className="row-between health-section-heading">
                 <div>
                   <p className="eyebrow">AI PROVIDER</p>
-                  <h2 id="claude-title">Claude & OpenAI integrations</h2>
+                  <h2 id="claude-title">AI provider integrations</h2>
                 </div>
                 <Button
                   disabled={checking}
@@ -235,6 +242,20 @@ export default function IntegrationsPage() {
                   onClick={() => checkConnection("openai")}
                 >
                   Check OpenAI connection
+                </Button>
+                <Button
+                  disabled={checking}
+                  variant="secondary"
+                  onClick={() => checkConnection("gemini")}
+                >
+                  Check Gemini connection
+                </Button>
+                <Button
+                  disabled={checking}
+                  variant="secondary"
+                  onClick={() => checkConnection("openrouter")}
+                >
+                  Check OpenRouter connection
                 </Button>
               </div>
               <div className="grid two">
@@ -260,7 +281,11 @@ export default function IntegrationsPage() {
                             ? "Claude"
                             : provider.mode === "openai"
                               ? "OpenAI"
-                              : "Local"}
+                              : provider.mode === "gemini"
+                                ? "Gemini"
+                                : provider.mode === "openrouter"
+                                  ? "OpenRouter"
+                                  : "Local"}
                         </dd>
                       </div>
                       <div>
@@ -351,15 +376,19 @@ export default function IntegrationsPage() {
                   </span>
                   <h3>Add a key securely, then restart the backend.</h3>
                   <p>
-                    Set <code>ANTHROPIC_API_KEY</code> or{" "}
-                    <code>AEGIS_OPENAI_API_KEY</code> in the project .env or
-                    secure cloud settings. Use{" "}
+                    Set <code>ANTHROPIC_API_KEY</code>,{" "}
+                    <code>AEGIS_OPENAI_API_KEY</code>, or{" "}
+                    <code>GEMINI_API_KEY</code>, or{" "}
+                    <code>OPENROUTER_API_KEY</code> in the project .env or secure
+                    cloud settings. Use{" "}
                     <code>AEGIS_AI_PROVIDER=auto</code> and{" "}
                     <code>AEGIS_KYC_VISION=auto</code> to activate the
                     configured provider across AI capabilities. You can
                     optionally set <code>ANTHROPIC_MODEL</code> or{" "}
-                    <code>AEGIS_OPENAI_MODEL</code> to a model available to your
-                    account.
+                    <code>AEGIS_OPENAI_MODEL</code> or <code>GEMINI_MODEL</code>{" "}
+                    to a model available to your account, or set{" "}
+                    <code>OPENROUTER_MODEL</code> (defaults to{" "}
+                    <code>openrouter/free</code>).
                   </p>
                   <p>
                     The connection check reads model metadata and sends no
@@ -376,6 +405,46 @@ export default function IntegrationsPage() {
                   <span>
                     This page shows presence and readiness only. Add secrets in
                     your environment, never in customer documents or chat.
+                  </span>
+                </div>
+              </Card>
+            </section>
+            <section className="stack" aria-labelledby="firestore-title">
+              <div className="health-section-heading">
+                <p className="eyebrow">GOOGLE CLOUD DATA SERVICES</p>
+                <h2 id="firestore-title">Firebase and Firestore</h2>
+              </div>
+              <Card className="integration-setup">
+                <div>
+                  <span className="integration-provider-icon">
+                    <BrainCircuit size={20} />
+                  </span>
+                  <h3>
+                    {readiness.data.firestore.agent_notifications_enabled
+                      ? "Agent alerts are projected to Firestore."
+                      : "Firestore alert projection is not enabled."}
+                  </h3>
+                  <p>
+                    Firebase Hosting can serve this Cloud Run application. When
+                    enabled, Firestore carries derived financial-health alert
+                    projections; PostgreSQL remains authoritative for
+                    accounts, balances, transfers, audit records, and agent
+                    runs. Cloud Run uses its service identity through the
+                    metadata server, so no service-account key file belongs in
+                    the application.
+                  </p>
+                  <p>
+                    Project: {readiness.data.firestore.project_configured
+                      ? "configured"
+                      : "not configured"} · Database: {readiness.data.firestore.database}
+                  </p>
+                </div>
+                <div className="integration-secure-note">
+                  <ShieldCheck size={23} />
+                  <strong>Server-side only</strong>
+                  <span>
+                    Firestore is a notification projection, not a ledger or
+                    authorization source. Failed delivery falls back to SQL.
                   </span>
                 </div>
               </Card>

@@ -27,6 +27,9 @@ def clean_provider_env(monkeypatch):
         "AEGIS_OPENAI_MODEL",
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_MODEL",
     ]:
         monkeypatch.delenv(name, raising=False)
     providers._model_cache.clear()
@@ -85,8 +88,194 @@ def test_auto_modes_activate_with_key_and_explicit_local_wins(
     monkeypatch.setenv("AEGIS_KYC_VISION", "local")
     assert config.resolve_kyc_mode() == "local"
     monkeypatch.setenv("AEGIS_AI_MODE", "unsupported")
-    with pytest.raises(RuntimeError, match="auto, local, claude or openai"):
+    with pytest.raises(RuntimeError, match="auto, local, claude, openai or gemini"):
         config.resolve_ai_mode()
+
+
+def test_gemini_key_auto_selection_model_discovery_and_check(clean_provider_env, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
+    assert config.resolve_ai_mode() == config.resolve_kyc_mode() == "gemini"
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.headers["x-goog-api-key"] == "synthetic-gemini-key"
+        assert "key=" not in str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]},
+                ]
+            },
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert providers.resolve_gemini_model() == "gemini-2.5-flash"
+    assert providers.resolve_gemini_model() == "gemini-2.5-flash"
+    checked = providers.check_gemini()
+    assert checked["status"] == "ok"
+    assert checked["model"] == "gemini-2.5-flash"
+    assert len(requests) == 2
+    status = {item["id"]: item for item in providers.integration_status()["providers"]}
+    assert status["gemini"]["status"] == "configured"
+    assert status["gemini"]["mode"] == "gemini"
+    assert "synthetic-gemini-key" not in str(status)
+
+
+def test_gemini_model_override_and_unconfigured_check(clean_provider_env, monkeypatch):
+    assert providers.check_gemini()["status"] == "unconfigured"
+    monkeypatch.setenv("GEMINI_MODEL", "models/gemini-test")
+    assert providers.resolve_gemini_model("synthetic-key") == "gemini-test"
+    monkeypatch.setenv("GEMINI_MODEL", "../invalid")
+    with pytest.raises(HTTPException, match="GEMINI_MODEL"):
+        providers.resolve_gemini_model("synthetic-key")
+
+
+def test_gemini_connection_check_verifies_explicit_model(clean_provider_env, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-explicit-test")
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert request.url.path.endswith("/models/gemini-explicit-test")
+        return httpx.Response(200, json={"name": "models/gemini-explicit-test"})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        providers.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert providers.check_gemini()["status"] == "ok"
+    assert len(requests) == 1
+
+
+def test_gemini_chat_uses_scoped_tools_and_hides_customer_identifiers(
+    intelligence_db, clean_provider_env, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+    payloads = []
+
+    def handle(request):
+        assert request.headers["x-goog-api-key"] == "synthetic-gemini-key"
+        assert request.url.path == "/v1beta/models/gemini-test-model:generateContent"
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        if len(payloads) == 1:
+            parts = [{"functionCall": {"name": "get_balance", "args": {}}}]
+        else:
+            assert payload["contents"][-1]["role"] == "user"
+            parts = [
+                {"text": "hidden internal thought", "thought": True},
+                {"text": "Your available balance is INR 20000.00."},
+            ]
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"role": "model", "parts": parts}}]},
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.chat(
+        db,
+        user,
+        "Synthetic Customer at synthetic@example.test, ID 123456789012: show my balance",
+    )
+    assert result["ai_mode"] == "gemini"
+    assert result["tools"][0]["name"] == "get_balance"
+    assert "INR 20000.00" in result["reply"]
+    assert "hidden internal thought" not in result["reply"]
+    assert "synthetic@example.test" not in json.dumps(payloads)
+    assert "123456789012" not in json.dumps(payloads)
+    assert payloads[0]["tools"][0]["functionDeclarations"]
+
+
+def test_gemini_document_answers_require_and_return_exact_citations(
+    intelligence_db, clean_provider_env, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+
+    def handle(request):
+        payload = json.loads(request.content)
+        assert payload["generationConfig"]["responseMimeType"] == "application/json"
+        assert "OBSIDIAN" not in json.dumps(payload)
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [{
+                    "content": {"parts": [{"text": json.dumps({
+                        "answer": "The source states the annual rate is 10.75% [1].",
+                        "citation_numbers": [1],
+                    })}]}
+                }]
+            },
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.query_documents(db, user, "What is the loan rate?")
+    assert result["ai_mode"] == "gemini"
+    assert "10.75%" in result["answer"]
+    assert result["citations"]
+
+
+def test_gemini_vision_is_limited_and_does_not_claim_identity_verification(
+    clean_provider_env, monkeypatch
+):
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+
+    def handle(request):
+        payload = json.loads(request.content)
+        parts = payload["contents"][0]["parts"]
+        assert parts[1]["inlineData"]["mimeType"] == "image/png"
+        assert parts[3]["inlineData"]["mimeType"] == "image/png"
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"parts": [{"text": json.dumps({
+                "document_readable": True,
+                "document_portrait_present": True,
+                "selfie_person_present": True,
+                "printed_full_name": "Synthetic Customer",
+                "confidence": 0.95,
+            })}]}}]},
+        )
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    png = b"\x89PNG\r\n\x1a\nsynthetic-image"
+    result = ai.assess_kyc_evidence(
+        "Synthetic Customer", "id.png", png, "selfie.png", png
+    )
+    assert result["mode"] == "gemini"
+    assert result["performed"] is True
+    assert "legal identity" in result["reasons"][0]
 
 
 def test_model_discovery_paginates_selects_latest_and_cache_is_key_scoped(

@@ -19,6 +19,14 @@ DOTENV_VARIABLES = frozenset(
         "AEGIS_OPENAI_MODEL",
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_MODEL",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_MODEL",
+        "GOOGLE_CLOUD_PROJECT",
+        "FIRESTORE_DATABASE",
+        "FIRESTORE_AGENT_NOTIFICATIONS",
         "DATABASE_URL",
     }
 )
@@ -90,16 +98,29 @@ def openai_key_configured() -> bool:
 
 
 def _automatic_provider() -> str:
-    # With both keys, Claude wins predictably; explicit provider selection wins.
+    # Existing provider priority is stable; Gemini activates when it is the available key.
     if os.getenv("ANTHROPIC_API_KEY", "").strip():
         return "claude"
-    return "openai" if openai_key_configured() else "local"
+    if openai_key_configured():
+        return "openai"
+    if os.getenv("OPENROUTER_API_KEY", "").strip():
+        return "openrouter"
+    return "gemini" if gemini_key_configured() else "local"
+
+
+def gemini_key_configured() -> bool:
+    return bool(
+        os.getenv("GEMINI_API_KEY", "").strip()
+        or os.getenv("GOOGLE_API_KEY", "").strip()
+    )
 
 
 def resolve_mode(variable: str, *, default: str = "auto") -> str:
     requested = os.getenv(variable, default).strip().lower()
-    if requested not in {"auto", "local", "claude", "openai"}:
-        raise RuntimeError(f"{variable} must be auto, local, claude or openai")
+    if requested not in {"auto", "local", "claude", "openai", "gemini", "openrouter"}:
+        raise RuntimeError(
+            f"{variable} must be auto, local, claude, openai, gemini or openrouter"
+        )
     if requested == "auto":
         return _automatic_provider()
     return requested
@@ -113,8 +134,11 @@ def resolve_ai_mode() -> str:
 
 def resolve_kyc_mode() -> str:
     requested = os.getenv("AEGIS_KYC_VISION", "auto").strip().lower()
-    if requested == "auto" and "AEGIS_AI_PROVIDER" in os.environ:
-        return resolve_ai_mode()
+    if requested == "auto":
+        selected = resolve_ai_mode()
+        return selected if selected in {"claude", "openai", "gemini"} else "local"
+    if requested == "openrouter":
+        raise RuntimeError("AEGIS_KYC_VISION does not support openrouter; choose local, claude, openai, gemini or auto")
     return resolve_mode("AEGIS_KYC_VISION")
 
 
@@ -155,6 +179,18 @@ def validate_configuration():
     ) and not openai_key_configured():
         raise RuntimeError(
             "OpenAI mode requires AEGIS_OPENAI_API_KEY (or the local OPENAI_API_KEY alias)"
+        )
+    if (
+        resolve_ai_mode() == "gemini" or resolve_kyc_mode() == "gemini"
+    ) and not gemini_key_configured():
+        raise RuntimeError("Gemini mode requires GEMINI_API_KEY or GOOGLE_API_KEY")
+    if resolve_ai_mode() == "openrouter" and not os.getenv("OPENROUTER_API_KEY", "").strip():
+        raise RuntimeError("OpenRouter mode requires OPENROUTER_API_KEY")
+    if os.getenv("FIRESTORE_AGENT_NOTIFICATIONS", "false").lower() == "true" and not os.getenv(
+        "GOOGLE_CLOUD_PROJECT", ""
+    ).strip():
+        raise RuntimeError(
+            "Firestore agent notifications require GOOGLE_CLOUD_PROJECT"
         )
     if PRODUCTION:
         if DEMO_ENABLED:

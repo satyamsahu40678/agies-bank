@@ -47,6 +47,7 @@ Paginate/limit stored history in backend; consistent default arrays for empty re
 
 - `GET /insights` -> `{items:[{id,kind,severity,title,message,action_label,action_path,status,metrics,created_at,updated_at}],summary:{...},latest_run}`; initial summary may be empty while a durable run is queued.
 - `POST /insights/refresh` -> AgentRun, HTTP202; coalesces pending work and permits a fresh review after completion.
+- `GET /notifications/agents` -> `{source:'database'|'firestore',items:[...]}` scoped to the signed-in customer. Firestore is an optional projection of derived agent alerts; SQL remains authoritative and is used as fallback when Firestore is disabled or unavailable.
 - `POST /insights/{id}/dismiss` -> insight; only the owning customer can dismiss it.
 - `GET /agent-runs` -> owned run list with status, attempts, max_attempts, tools, decisions, trace_id, output, error and timestamps. Jobs are read-only financial reviews, never transfer execution.
 - `POST /agent-runs/{id}/retry` -> AgentRun, HTTP202; only failed owned runs, bounded manual retries.
@@ -55,8 +56,8 @@ Paginate/limit stored history in backend; consistent default arrays for empty re
 - `PATCH /goals/{id} {name?,target_amount?,saved_amount?,target_date?,status?}` -> goal; active/paused/completed states.
 - `DELETE /goals/{id}` -> `{deleted:true}`. These are planning records; all create/update/delete operations preserve ledger entries and account balances.
 - `GET /documents/{id}/content` -> `{document,pages:[{page,text}]}`: exact indexed source passages, customer/private or shared policy only. Long pages may include overlapping chunks.
-- `GET /analyst/integrations` -> `{ai_mode,kyc_mode,providers:[{id,name,status,integrated,mode,credential_configured,model,model_selection,endpoints,capabilities,limitations,requirements}],disclaimer}`. Credential values never appear.
-- `POST /analyst/integrations/claude/check` and `/analyst/integrations/openai/check` -> `{status,configured,model,checked_at,message,error_code?,scope:'model_access'}`. Non-destructive model access check; it does not prove paid inference or real financial operations.
+- `GET /analyst/integrations` -> `{ai_mode,kyc_mode,providers:[{id,name,status,integrated,mode,credential_configured,model,model_selection,endpoints,capabilities,limitations,requirements}],firestore:{agent_notifications_enabled,project_configured,database},disclaimer}`. Credential values never appear.
+- `POST /analyst/integrations/{claude|openai|gemini|openrouter}/check` -> `{status,configured,model,checked_at,message,error_code?,scope}`. Non-destructive provider/model-catalog check; it does not prove inference availability or real financial operations.
 - `GET /analyst/documents` -> shared bank policies only.
 - `POST /analyst/documents` multipart `{file,title,confirmed_public:true}` -> shared policy, HTTP201. Analyst role, valid CSRF and explicit public-sharing confirmation required. This publishes Q&A knowledge; it does not change lending/payment policy rules.
 

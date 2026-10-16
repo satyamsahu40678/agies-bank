@@ -324,6 +324,17 @@ export default function Dashboard() {
           <ArrowUpRight size={14} />
         </Link>
       </div>
+      <div className="row assistant-shortcuts" aria-label="Assistant shortcuts">
+        <Link href="/assistant?q=Find%20recurring%20charges%20and%20subscriptions%20in%20my%20recent%20activity">
+          <Sparkles size={13} /> Review recurring charges
+        </Link>
+        <Link href="/assistant?q=Help%20me%20plan%20a%20safe%20payment%20from%20my%20available%20balance">
+          <Wallet size={13} /> Plan a payment
+        </Link>
+        <Link href="/assistant?q=Suggest%20a%20realistic%20monthly%20savings%20goal%20from%20my%20cash%20flow">
+          <TrendingUp size={13} /> Set a savings goal
+        </Link>
+      </div>
       <div className="dashboard-bottom">
         <Card className="transactions-card">
           <div className="row-between">

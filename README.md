@@ -1,6 +1,6 @@
 # AegisBank
 
-A runnable, governed agentic banking application with customer and analyst workspaces, configurable **Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
+A runnable, governed agentic banking application with customer and analyst workspaces, configurable **Gemini, Claude or OpenAI**, proactive financial reviews, identity workflows, cited document answers, recommendations and fraud investigation.
 
 Banking, identity/sanctions, bureau and geo/device providers use explicit synthetic adapters, as requested. No real money moves. AI keys enable the implemented model-assisted capabilities; they do not establish a real bank or legal identity-provider connection.
 
@@ -29,23 +29,44 @@ make dev
 
 For Docker Desktop/PostgreSQL, copy `.env.example` to `.env`, generate distinct random `POSTGRES_PASSWORD` and `AEGIS_SECRET`, then run `docker compose up --build -d`. See [operations](docs/OPERATIONS.md) for proxy-aware builds and production requirements.
 
-## Add Claude or OpenAI
+## Add Gemini, Claude, OpenAI or OpenRouter
 
 Create or edit the **project-root `.env`**, which is ignored by Git. Enter keys there or in secure backend environment settings; do not put them in chat, browser forms or source code.
 
 ```dotenv
 AEGIS_AI_PROVIDER=auto
 AEGIS_KYC_VISION=auto
-# Add either provider's key:
+# Add a provider key:
+GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 AEGIS_OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+# Optional model override:
+GEMINI_MODEL=
+OPENROUTER_MODEL=openrouter/free
 ```
 
-Restart the backend after editing. With one supplied key, automatic mode selects that provider for chat/tools, document synthesis and limited KYC image assessment. With both keys, auto deterministically prefers Claude; set `AEGIS_AI_PROVIDER=openai` or `claude` to choose. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
+Restart the backend after editing. Automatic mode selects a configured provider for chat/tools and document synthesis. Precedence is Claude, OpenAI, OpenRouter, then Gemini; set `AEGIS_AI_PROVIDER` to `gemini`, `openai`, `claude` or `openrouter` to choose. OpenRouter defaults to `openrouter/free`; route availability and tool calling vary and can change. OpenRouter is not used for KYC image review. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
 
-Local `OPENAI_API_KEY` is accepted as an alias. In Codex cloud settings use `AEGIS_OPENAI_API_KEY`, because `OPENAI_API_KEY` is a reserved platform target name. Optional model overrides are `ANTHROPIC_MODEL` and `AEGIS_OPENAI_MODEL`; otherwise the app discovers an accessible supported model. Allow `api.anthropic.com` and/or `api.openai.com` when running behind restricted egress.
+`GOOGLE_API_KEY` is accepted as a Gemini alias. Local `OPENAI_API_KEY` is accepted as an alias. Optional model overrides are `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `AEGIS_OPENAI_MODEL` and `OPENROUTER_MODEL`; otherwise the app discovers a supported model where implemented. Gemini uses Google's native `generateContent` function calling and sends credentials in an API-key header, not a URL. OpenRouter uses its OpenAI-compatible chat completions API. Allow `generativelanguage.googleapis.com`, `openrouter.ai`, `api.anthropic.com` and/or `api.openai.com` when running behind restricted egress.
 
-The analyst **Integrations** page shows implemented adapters, effective modes and credential presence without revealing values. Connection buttons check model access without sending customer data. Supplied keys still need valid account permissions, billing and network access. No live AI key was supplied during development; provider behavior is exercised with mocked protocol responses.
+The analyst **Integrations** page shows implemented adapters, effective modes and credential presence without revealing values. Connection buttons check model/catalog access without sending customer data; that does not prove inference succeeds. Supplied keys still need valid account permissions, quota and network access. Do not use credentials pasted into chat or source code; revoke and rotate them immediately.
+
+## Google Cloud deployment
+
+The Google stack is wired as follows: Gemini provides model-assisted tool routing and source-grounded answers; Firestore optionally carries a server-side projection of derived agent alerts; PostgreSQL/Cloud SQL remains authoritative for accounts, balances, transfers, audit, and job state; Cloud Run hosts the API and Next.js app; Firebase Hosting supplies the public HTTPS/CDN URL and rewrites traffic to Cloud Run. Cloud Run accesses Firestore through its service identity. No service-account JSON key is required or accepted by the deployment script.
+
+After creating Cloud SQL, a Firestore Native database, a dedicated Cloud Run service account and Secret Manager secrets named `DATABASE_URL` and `AEGIS_SECRET` (optionally `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `AEGIS_OPENAI_API_KEY` or `OPENROUTER_API_KEY`), grant that service account Cloud SQL Client, Secret Manager Secret Accessor and Datastore User. `DATABASE_URL` must use the Cloud SQL Unix socket path. Then run from Cloud Shell with `gcloud`, Docker build services and authenticated Firebase CLI configured:
+
+```bash
+export GOOGLE_CLOUD_PROJECT=your-project-id
+export CLOUD_RUN_REGION=us-central1
+export CLOUD_SQL_INSTANCE=your-project-id:us-central1:your-instance
+export CLOUD_RUN_SERVICE_ACCOUNT=aegis-runtime@your-project-id.iam.gserviceaccount.com
+bash scripts/deploy-google.sh
+```
+
+The script migrates the database before deploying and prints the Firebase Hosting prototype URL when successful. Resource creation, billing, Secret Manager values, Firebase project access, domain configuration and a public deployment are not performed by local tests. Rotate the leaked service-account key before provisioning; use Cloud Shell ADC and the dedicated runtime identity instead of that key file.
 
 ## Demo sign-ins
 
@@ -62,13 +83,14 @@ These credentials are intentionally public synthetic demo credentials. Productio
 - **Financial health:** proactive scoped tools review posted activity, cash flow, budget pressure, subscriptions, identity status, affordability and savings plans.
 - **Savings goals:** manual planning progress, target dates, contribution estimates and pause/completion controls; goals never debit or reserve money.
 - **Durable agents:** persistent queue, event deduplication, atomic leases, bounded retries/crash recovery, tool scopes, decision summaries and run visibility. Agents propose; financial mutations remain governed.
-- **Assistant:** balance/spend/budget/affordability/policy tools, Claude/OpenAI loops, exact citations and consent-required payment proposals.
+- **Assistant:** balance/spend/budget/affordability/policy tools, Gemini/Claude/OpenAI/OpenRouter loops, exact citations and consent-required payment proposals.
 - **Identity:** bounded ID/selfie uploads, evidence hashes, synthetic screening, transparent risk reasons and analyst review; optional model vision assists evidence quality without asserting legal identity or liveness.
 - **Document intelligence:** searchable PDF/text/Markdown/CSV upload, tenant isolation, grounded answers, exact source passages and preview.
 - **Recommendations:** loan and term-life rule explanations, eligible/blocked states and precise EMI calculations. No real credit or insurance is issued.
 - **Security:** statistical/amount/velocity/new-recipient signals, synthetic device/VPN/geo history, calculated impossible-travel checks, customer alerts, transfer holds and analyst cases.
 - **Analyst operations:** approve/reject with reasons, atomic balance rechecks, freeze/unfreeze, audit evidence, integration checks and explicitly confirmed shared-policy publication.
 - **Deployment safeguards:** expiring authenticated sessions, CSRF/origin checks, upload bounds, append-only ledger/audit guards, migrations, production configuration refusal, secure analyst provisioning and CI workflow.
+- **Google Cloud:** Cloud Run deployment script, Firebase Hosting rewrite, server-identity Firestore alert projection and deny-by-default client Firestore rules.
 
 ## Demo journey
 

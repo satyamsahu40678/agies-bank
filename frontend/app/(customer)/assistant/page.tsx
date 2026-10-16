@@ -226,7 +226,14 @@ export default function Assistant() {
     (item) => item.id === proposal?.beneficiary_id,
   );
   const local = !health.data || health.data.ai_mode === "local";
-  const providerName = health.data?.ai_mode === "openai" ? "OpenAI" : "Claude";
+  const providerName =
+    health.data?.ai_mode === "openai"
+      ? "OpenAI"
+      : health.data?.ai_mode === "gemini"
+        ? "Gemini"
+        : health.data?.ai_mode === "openrouter"
+          ? "OpenRouter"
+          : "Claude";
   return (
     <div className="assistant-page">
       <PageHeader

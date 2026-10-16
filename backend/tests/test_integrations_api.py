@@ -70,7 +70,13 @@ def test_private_source_passages_are_isolated(customer):
 
 
 def test_provider_metadata_and_checks_never_expose_credentials(analyst, monkeypatch):
-    for name in ("ANTHROPIC_API_KEY", "AEGIS_OPENAI_API_KEY", "OPENAI_API_KEY"):
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "AEGIS_OPENAI_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+    ):
         monkeypatch.delenv(name, raising=False)
     metadata = analyst.get("/api/analyst/integrations")
     assert metadata.status_code == 200
@@ -88,11 +94,44 @@ def test_provider_metadata_and_checks_never_expose_credentials(analyst, monkeypa
         not in analyst.get("/api/analyst/integrations").text
     )
     monkeypatch.delenv("ANTHROPIC_API_KEY")
-    for provider in ("claude", "openai"):
+    for provider in ("claude", "openai", "gemini"):
         result = analyst.post(f"/api/analyst/integrations/{provider}/check")
         assert result.status_code == 200, result.text
         assert result.json()["status"] == "unconfigured"
         assert result.json()["configured"] is False
+
+
+def test_gemini_provider_metadata_and_connection_check_are_secret_safe(
+    analyst, monkeypatch
+):
+    secret = "synthetic-gemini-credential"
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("AEGIS_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "auto")
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+    metadata = analyst.get("/api/analyst/integrations")
+    assert metadata.status_code == 200
+    payload = metadata.json()
+    gemini = next(item for item in payload["providers"] if item["id"] == "gemini")
+    assert gemini["credential_configured"] is True
+    assert gemini["status"] == "configured"
+    assert secret not in metadata.text
+    checked = analyst.post("/api/analyst/integrations/gemini/check")
+    assert checked.status_code == 200
+    assert checked.json()["status"] == "error"
+    assert secret not in checked.text
+    assert analyst.get("/api/analyst/integrations/gemini/check").status_code == 405
+
+
+def test_agent_notification_feed_is_customer_scoped_and_uses_sql_when_firestore_disabled(
+    customer, analyst, monkeypatch
+):
+    monkeypatch.setenv("FIRESTORE_AGENT_NOTIFICATIONS", "false")
+    response = customer.get("/api/notifications/agents")
+    assert response.status_code == 200
+    assert response.json() == {"source": "database", "items": []}
+    assert analyst.get("/api/notifications/agents").status_code == 403
 
 
 def test_budget_api_combines_category_variants(customer, db_factory):
