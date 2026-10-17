@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { api, dateTime, useResource } from "@/lib/api";
+import { customerAgentName } from "@/lib/customer-labels";
 import {
   Button,
   Card,
@@ -344,7 +345,7 @@ export default function DocumentsPage() {
                 <div className="row-between">
                   <h2 className="section-title">Your answer</h2>
                   <span className="chip">
-                    {answer.agent.replace(/_/g, " ")}
+                    {customerAgentName(answer.agent)}
                   </span>
                 </div>
                 <p
@@ -403,16 +404,6 @@ export default function DocumentsPage() {
                     decision.
                   </Notice>
                 )}
-                <p
-                  className="muted"
-                  style={{
-                    marginTop: 20,
-                    fontSize: 11,
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  Trace {answer.trace_id}
-                </p>
               </Card>
             )}
             {!answer && !asking && (

@@ -133,7 +133,8 @@ These credentials are intentionally public synthetic demo credentials. Productio
 - **Financial health:** proactive scoped tools review posted activity, cash flow, budget pressure, subscriptions, identity status, affordability and savings plans.
 - **Savings goals:** manual planning progress, target dates, contribution estimates and pause/completion controls; goals never debit or reserve money.
 - **Durable agents:** persistent queue, event deduplication, atomic leases, bounded retries/crash recovery, tool scopes, decision summaries and run visibility. Agents propose; financial mutations remain governed.
-- **Assistant:** balance/spend/budget/affordability/policy tools, Gemini/Claude/OpenAI/OpenRouter loops, exact citations and consent-required payment proposals.
+- **Assistant:** balance/spend/budget/affordability/policy tools, Gemini/Claude/OpenAI/OpenRouter loops, Markdown replies with headings, lists, tables, links and code blocks, exact citations and consent-required payment proposals. Assistant Markdown uses React elements with raw HTML disabled; user messages stay literal text.
+- **Customer workspace:** friendly specialist names and review summaries, with scrollable navigation for shorter screens. Internal tool lists, orchestration copy and trace IDs are kept out of customer pages; detailed operational evidence remains in the analyst workspace and backend audit records.
 - **Identity:** bounded ID/selfie uploads, evidence hashes, synthetic screening, transparent risk reasons and analyst review; optional model vision assists evidence quality without asserting legal identity or liveness.
 - **Document intelligence:** searchable PDF/text/Markdown/CSV upload, tenant isolation, grounded answers, exact source passages and preview.
 - **Recommendations:** loan and term-life rule explanations, eligible/blocked states and precise EMI calculations. No real credit or insurance is issued.

@@ -22,6 +22,7 @@ import {
   BriefcaseBusiness,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { customerAgentName } from "@/lib/customer-labels";
 import { api, dateTime, money, useResource } from "@/lib/api";
 import {
   Button,
@@ -543,7 +544,7 @@ export default function Dashboard() {
             <div key={item.id}>
               <span className="agent-activity-dot" />
               <div>
-                <strong>{item.agent.replaceAll("_", " ")}</strong>
+                <strong>{customerAgentName(item.agent)}</strong>
                 <p>{item.summary}</p>
                 <span>{dateTime(item.created_at)}</span>
               </div>

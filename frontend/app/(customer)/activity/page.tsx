@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { dateTime, useResource } from "@/lib/api";
+import { customerAgentName, customerActivitySummary } from "@/lib/customer-labels";
 import {
   Button,
   Card,
@@ -15,8 +16,6 @@ import {
 import {
   ArrowUpRight,
   Bot,
-  Check,
-  Copy,
   Filter,
   RefreshCw,
   Search,
@@ -43,46 +42,31 @@ export default function ActivityPage() {
   const { data, loading, error, refresh } = useResource<AuditEvent[]>("/audit");
   const [agent, setAgent] = useState("all");
   const [search, setSearch] = useState("");
-  const [copied, setCopied] = useState("");
-  const [copyError, setCopyError] = useState("");
+  const customerEvents = useMemo(() => (data || []).filter(event => !["assistant_tool_completed", "provider_connection_checked", "assistant_provider_fallback"].includes(event.action)), [data]);
   const agents = useMemo(
-    () => Array.from(new Set(data?.map((event) => event.agent) || [])).sort(),
-    [data],
+    () => Array.from(new Set(customerEvents.map((event) => customerAgentName(event.agent)))).sort(),
+    [customerEvents],
   );
   const filtered = useMemo(
     () =>
-      (data || []).filter(
+      customerEvents.filter(
         (event) =>
-          (agent === "all" || event.agent === agent) &&
-          `${event.action} ${event.summary} ${event.trace_id} ${event.agent}`
+          (agent === "all" || customerAgentName(event.agent) === agent) &&
+          `${event.action} ${event.summary} ${customerAgentName(event.agent)}`
             .toLowerCase()
             .includes(search.trim().toLowerCase()),
       ),
-    [data, agent, search],
+    [customerEvents, agent, search],
   );
-  const toolCalls = (data || []).reduce(
-    (total, event) => total + (event.tools?.length || 0),
-    0,
-  );
+  const recentUpdates = customerEvents.filter(event => new Date(event.created_at).getTime() >= Date.now() - 7 * 24 * 60 * 60 * 1000).length;
 
-  async function copy(trace: string) {
-    setCopyError("");
-    try {
-      await navigator.clipboard.writeText(trace);
-      setCopied(trace);
-    } catch {
-      setCopyError(
-        "Your browser could not copy the trace ID. Select the visible ID and copy it manually.",
-      );
-    }
-  }
 
   return (
     <>
       <PageHeader
-        eyebrow="AGENT ACTIVITY"
+        eyebrow="YOUR ACTIVITY"
         title="Every action, accounted for."
-        description="Follow the agents working for your account, inspect the tools they use, and review the reasons behind each decision."
+        description="See account updates, helpful reviews and the reasons behind important decisions."
         action={
           <Button variant="secondary" onClick={refresh} disabled={loading}>
             <RefreshCw size={15} />
@@ -96,7 +80,7 @@ export default function ActivityPage() {
             <span className="stat-label">RECORDED DECISIONS</span>
             <ShieldCheck size={19} color="#07886a" />
           </div>
-          <div className="metric-value">{data?.length || 0}</div>
+          <div className="metric-value">{customerEvents.length}</div>
           <p className="muted" style={{ fontSize: 12 }}>
             In your recent activity history
           </p>
@@ -113,23 +97,21 @@ export default function ActivityPage() {
         </Card>
         <Card>
           <div className="row-between">
-            <span className="stat-label">TOOL OPERATIONS</span>
+            <span className="stat-label">LAST 7 DAYS</span>
             <ArrowUpRight size={19} color="#07886a" />
           </div>
-          <div className="metric-value">{toolCalls}</div>
+          <div className="metric-value">{recentUpdates}</div>
           <p className="muted" style={{ fontSize: 12 }}>
-            Scoped actions with visible evidence
+            Recent updates to your account
           </p>
         </Card>
       </div>
       <div style={{ height: 24 }} />
       <Notice>
         Decision summaries describe observable actions and rule outcomes.
-        Private reasoning, passwords, and identity document contents are
-        excluded from the audit trail.
+        Your account updates and review summaries appear here.
       </Notice>
       <div style={{ height: 24 }} />
-      {copyError && <Notice tone="warning">{copyError}</Notice>}
       {loading ? (
         <LoadingState />
       ) : error ? (
@@ -239,7 +221,7 @@ export default function ActivityPage() {
                           className="chip"
                           style={{ background: "#edf8f4", color: "#047b60" }}
                         >
-                          {label(event.agent)}
+                          {customerAgentName(event.agent)}
                         </span>
                         <span className="muted" style={{ fontSize: 11 }}>
                           {dateTime(event.created_at)}
@@ -265,105 +247,8 @@ export default function ActivityPage() {
                       {label(event.action)}
                     </h3>
                     <p style={{ fontSize: 14, lineHeight: 1.8, margin: 0 }}>
-                      {event.summary}
+                      {customerActivitySummary(event.summary)}
                     </p>
-                    <details className="audit-details">
-                      <summary
-                        style={{
-                          cursor: "pointer",
-                          fontSize: 12,
-                          color: "#07886a",
-                          fontWeight: 600,
-                          padding: "18px 0 0",
-                        }}
-                      >
-                        Inspect execution · {event.tools?.length || 0}{" "}
-                        {(event.tools?.length || 0) === 1 ? "tool" : "tools"}
-                      </summary>
-                      <div
-                        style={{
-                          marginTop: 18,
-                          borderTop: "1px solid var(--border, #e3e8eb)",
-                          paddingTop: 18,
-                        }}
-                      >
-                        <h4 style={{ fontSize: 12, margin: "0 0 12px" }}>
-                          Tool activity
-                        </h4>
-                        {!event.tools?.length ? (
-                          <p className="muted" style={{ fontSize: 12 }}>
-                            No external tool calls were required for this event.
-                          </p>
-                        ) : (
-                          <div className="stack">
-                            {event.tools.map((tool, toolIndex) => (
-                              <div
-                                key={toolIndex}
-                                style={{
-                                  padding: 12,
-                                  borderRadius: 8,
-                                  background: "#f6f8f7",
-                                }}
-                              >
-                                <code
-                                  style={{
-                                    fontSize: 12,
-                                    overflowWrap: "anywhere",
-                                  }}
-                                >
-                                  {typeof tool === "string" ? tool : tool.name}
-                                </code>
-                                {typeof tool !== "string" &&
-                                  (tool.summary || tool.result) && (
-                                    <p
-                                      className="muted"
-                                      style={{
-                                        fontSize: 12,
-                                        lineHeight: 1.7,
-                                        margin: "7px 0 0",
-                                      }}
-                                    >
-                                      {tool.summary || tool.result}
-                                    </p>
-                                  )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div
-                          className="row-between"
-                          style={{ marginTop: 18, gap: 12, flexWrap: "wrap" }}
-                        >
-                          <div>
-                            <div
-                              className="stat-label"
-                              style={{ marginBottom: 6 }}
-                            >
-                              TRACE ID
-                            </div>
-                            <code
-                              style={{ fontSize: 11, overflowWrap: "anywhere" }}
-                            >
-                              {event.trace_id}
-                            </code>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            onClick={() => copy(event.trace_id)}
-                            aria-label={`Copy trace ID for ${label(event.action)}`}
-                          >
-                            {copied === event.trace_id ? (
-                              <Check size={14} />
-                            ) : (
-                              <Copy size={14} />
-                            )}
-                            {copied === event.trace_id
-                              ? "Copied"
-                              : "Copy trace"}
-                          </Button>
-                        </div>
-                      </div>
-                    </details>
                   </Card>
                 </div>
               ))}

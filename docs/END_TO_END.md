@@ -9,12 +9,12 @@ to exercise funded payment journeys.
 
 | Component | Implementation | Purpose |
 | --- | --- | --- |
-| Customer and analyst UI | Next.js 15.5, React 19, TypeScript, Lucide icons, self-hosted fonts | Responsive pages, source previews, dialogs and run traces |
+| Customer and analyst UI | Next.js 15.5, React 19, TypeScript, react-markdown/remark-gfm, Lucide icons, self-hosted fonts | Responsive pages, Markdown replies, source previews, dialogs and run traces |
 | API | Python 3.12, FastAPI, Uvicorn, Pydantic | Validated requests and server-owned banking decisions |
 | Authentication | Argon2, opaque expiring sessions, Secure HttpOnly `__session`, CSRF/Origin checks | Customer/analyst and tenant boundaries; Firebase Auth is not used |
 | Data | Firestore Native and Python Google Cloud SDK | All authoritative state, atomic commits and conditional preconditions |
 | Domain repository | Plain records, query expressions and unit of work | Integer-paise money, unique reservations, append-only ledger/audit |
-| AI | OpenRouter/free; optional Gemini, Claude or OpenAI; scoped tool registry | Grounded answers and review-only proposals |
+| AI | Hosted Gemini `gemini-3.1-flash-lite`; optional OpenRouter, Claude or OpenAI; scoped tool registry | Grounded answers and review-only proposals |
 | Documents | pypdf and bounded text/Markdown/CSV extraction | Private/shared retrieval with exact page/excerpt citations |
 | Background work | Durable Firestore outbox, leases, fencing and schedules | Retryable, customer-scoped reviews without moving funds |
 | Cloud delivery | Cloud Build, Artifact Registry, Cloud Run, Firebase Hosting, Scheduler, Secret Manager | HTTPS app, independent finite workers and secret bindings |
@@ -61,19 +61,30 @@ continues to influence subsequent demo payments.
 
 1. Ask for a balance, spending summary, eligibility explanation or policy.
 2. The server redacts identifiers and exposes only authorized scoped tools.
-3. The free router's first selected free model is retained for tool continuations.
-   Banking questions require fresh tool results. Document tools retrieve only
+3. Gemini uses native `generateContent` function calling. Opaque thought
+   signatures are retained for tool continuations and excluded from client
+   responses. Scoped tools supply account data. Document tools retrieve only
    the customer's uploads and shared analyst-published policies.
 4. Model citations are checked against retrieved excerpts. Invalid references
-   fail validation and the generated answer is discarded; the labelled local
-   alternative retains exact accessible sources. Document text cannot grant tools.
+   fail validation and the generated answer is discarded. Document text cannot
+   grant tools. Gemini configuration, quota and validation errors remain visible.
 5. OpenRouter rate limits/outages/timeouts and unusable native tool/output
    responses use the local scoped assistant with
    a visible notice and `ai_mode=local`. Local document answers quote accessible
    passages. The notice distinguishes these from model-generated synthesis.
-6. A validated transfer proposal uses server-authored confirmation text and
-   opens the payment review dialog. Money moves only through the confirmed,
+6. A validated transfer proposal opens the payment review dialog. Money moves only through the confirmed,
    governed payment endpoint.
+7. Saved history and new assistant replies render Markdown headings, emphasis,
+   lists, tables, blockquotes, links and fenced code. Raw HTML is ignored,
+   unsafe link protocols are filtered, and external links use `noopener
+   noreferrer`. User messages remain literal text. Markdown formatting does
+   not grant tools or submit proposals.
+
+Customer screens show named specialists and plain-language account/review
+updates. Internal tool lists, execution identifiers and provider-routing copy
+are omitted from chat, insights, scheduled-review history, activity and document
+answers. The sidebar scrolls vertically when its contents exceed the screen.
+Backend audit evidence and analyst operational controls remain available.
 
 Upload [sample-policy.txt](../examples/sample-policy.txt), ask why a loan can be
 rejected, then open the returned source passage. A private upload remains hidden

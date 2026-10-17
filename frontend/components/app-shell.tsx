@@ -89,7 +89,7 @@ const customerNav = [
     href: "/activity",
     label: "Agent activity",
     icon: Activity,
-    description: "Transparent decision and tool history",
+    description: "Account updates and helpful review summaries",
   },
 ];
 const analystNav = [
@@ -262,6 +262,9 @@ export function AppShell({
             <div>
               <strong>Your guard is always on</strong>
               <span>
+                {role === "customer" ? (
+                  health.data ? "Here when you need help" : "Checking availability"
+                ) : <>
                 Governed agents ·{" "}
                 {health.data?.ai_mode === "claude"
                   ? "Claude mode"
@@ -274,6 +277,7 @@ export function AppShell({
                         : health.data
                           ? "Local mode"
                           : "Connecting"}
+                </>}
               </span>
             </div>
             <Shield size={17} />
@@ -292,13 +296,13 @@ export function AppShell({
             </p>
           )}
           <div className="sidebar-footnote">
-            {health.data?.demo_enabled
-              ? "Synthetic banking sandbox"
-              : "Governed banking workspace"}
+            {role === "customer"
+              ? (health.data?.demo_enabled ? "Demo workspace" : "Your banking workspace")
+              : (health.data?.demo_enabled ? "Synthetic banking sandbox" : "Governed banking workspace")}
             <br />
-            {health.data?.demo_enabled
-              ? "No real money is moved."
-              : "Authenticated session controls."}
+            {role === "customer"
+              ? (health.data?.demo_enabled ? "Sample balances and payments" : "Review every payment before confirming")
+              : (health.data?.demo_enabled ? "No real money is moved." : "Authenticated session controls.")}
           </div>
         </div>
       </aside>

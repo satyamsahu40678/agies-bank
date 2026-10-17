@@ -183,20 +183,14 @@ test("financial analysis completes with scoped tools, persisted trace and dismis
   expect(await accountBalance(page)).toBe(before);
 
   await page.reload();
-  const runDetails = page
-    .locator(".health-run")
-    .filter({ hasText: completed!.trace_id });
+  const runDetails = page.locator(`.health-run[data-run-id="${completed!.id}"]`);
   await expect(runDetails).toHaveCount(1);
   await runDetails.locator("summary").click();
-  await expect(runDetails.locator(".health-run-trace")).toHaveText(
-    completed!.trace_id,
-  );
-  await expect(
-    runDetails.getByText("get balance", { exact: true }),
-  ).toBeVisible();
+  await expect(runDetails.locator(".health-run-trace")).toHaveCount(0);
+  await expect(runDetails.getByText("get balance", { exact: true })).toHaveCount(0);
   await expect(
     runDetails.getByRole("heading", {
-      name: "Recorded decisions",
+      name: "Review summary",
       exact: true,
     }),
   ).toBeVisible();

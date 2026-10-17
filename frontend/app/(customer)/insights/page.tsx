@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api, dateTime, money, useResource } from "@/lib/api";
 import { AgentRun, FinancialInsights, SavingsGoal } from "@/lib/agentic";
+import { customerReviewDecisions } from "@/lib/customer-labels";
 import {
   Button,
   Card,
@@ -627,8 +628,8 @@ export default function InsightsPage() {
       >
         <div className="row-between health-section-heading">
           <div>
-            <p className="eyebrow">AUTONOMY, WITH ACCOUNTABILITY</p>
-            <h2 id="runs-title">Agent runs</h2>
+            <p className="eyebrow">YOUR RECENT REVIEWS</p>
+            <h2 id="runs-title">Account reviews</h2>
           </div>
           <Button
             variant="ghost"
@@ -640,10 +641,8 @@ export default function InsightsPage() {
           </Button>
         </div>
         <p className="muted health-explanation">
-          See which tools were used, what each run decided, and whether it
-          completed. Financial analysis runs read your account and update
-          insights; payment execution follows its separate confirmation and risk
-          controls.
+          See what each review found and follow its progress. Your suggestions
+          appear in Insights. You review and confirm every payment separately.
         </p>
         {runs.loading && !runs.data ? (
           <LoadingState />
@@ -655,7 +654,7 @@ export default function InsightsPage() {
             {runs.data?.length ? (
               <div className="health-run-list">
                 {runs.data.map((run) => (
-                  <details className="health-run" key={run.id}>
+                  <details className="health-run" key={run.id} data-run-id={run.id}>
                     <summary>
                       <span className="health-run-icon">
                         <Workflow size={18} />
@@ -671,16 +670,6 @@ export default function InsightsPage() {
                     </summary>
                     <div className="health-run-detail">
                       <dl>
-                        <div>
-                          <dt>Trace</dt>
-                          <dd className="health-run-trace">{run.trace_id}</dd>
-                        </div>
-                        <div>
-                          <dt>Attempts</dt>
-                          <dd>
-                            {run.attempts} of {run.max_attempts}
-                          </dd>
-                        </div>
                         <div>
                           <dt>Started</dt>
                           <dd>
@@ -700,34 +689,19 @@ export default function InsightsPage() {
                       </dl>
                       <div className="health-run-evidence">
                         <div>
-                          <h4>Tools used</h4>
-                          {run.tools.length ? (
-                            <div className="health-tool-list">
-                              {run.tools.map((tool, index) => (
-                                <span key={`${tool}-${index}`}>
-                                  <Check size={11} />
-                                  {label(tool)}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="muted">No tools recorded yet.</p>
-                          )}
-                        </div>
-                        <div>
-                          <h4>Recorded decisions</h4>
+                          <h4>Review summary</h4>
                           {run.decisions.length ? (
                             <ul>
-                              {run.decisions.map((decision, index) => (
+                              {customerReviewDecisions(run.decisions).map((decision, index) => (
                                 <li key={index}>{decision}</li>
                               ))}
                             </ul>
                           ) : (
-                            <p className="muted">No decisions recorded yet.</p>
+                            <p className="muted">Your review summary will appear here.</p>
                           )}
                         </div>
                       </div>
-                      {run.error && <Notice tone="danger">{run.error}</Notice>}
+                      {run.error && <Notice tone="danger">This review could not finish. Please try again.</Notice>}
                       {run.status === "failed" &&
                         run.attempts < run.max_attempts && (
                           <Button

@@ -157,6 +157,16 @@ svg {
   flex-direction: column;
   z-index: 30;
   padding: 29px 20px 18px;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #466260 transparent;
+}
+.sidebar > * {
+  flex-shrink: 0;
 }
 .brand-link {
   margin-left: 9px;
@@ -2903,6 +2913,100 @@ svg {
   display: block;
   margin-top: 9px;
 }
+.chat-markdown {
+  white-space: normal;
+  min-width: 0;
+}
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown blockquote,
+.chat-markdown pre,
+.chat-markdown-table {
+  margin: 0.75em 0;
+}
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  margin: 1em 0 0.4em;
+  color: var(--ink);
+  line-height: 1.4;
+  letter-spacing: normal;
+}
+.chat-markdown h1 { font-size: 1.4em; }
+.chat-markdown h2 { font-size: 1.25em; }
+.chat-markdown h3 { font-size: 1.1em; }
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 { font-size: 1em; }
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.6em;
+}
+.chat-markdown li + li { margin-top: 0.3em; }
+.chat-markdown li > p { margin: 0.25em 0; }
+.chat-markdown a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.chat-markdown blockquote {
+  padding: 0.1em 1em;
+  border-left: 3px solid var(--mint);
+  color: var(--muted);
+}
+.chat-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.92em;
+  background: #edf4e4;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+.chat-markdown pre {
+  overflow-x: auto;
+  white-space: pre;
+  padding: 12px 14px;
+  background: #f5f8f1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+}
+.chat-markdown pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+.chat-markdown-table {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.chat-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: inherit;
+}
+.chat-markdown th,
+.chat-markdown td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.chat-markdown th { background: #edf4e4; color: var(--ink); }
+.chat-markdown tr:last-child td { border-bottom: 0; }
+.chat-markdown hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+.chat-markdown .contains-task-list { list-style: none; padding-left: 0.25em; }
+.chat-markdown input[type="checkbox"] { margin-right: 0.5em; accent-color: var(--green); }
 .user-message {
   margin-left: auto;
   max-width: 85%;
@@ -4097,7 +4201,7 @@ svg {
 }
 .health-run-evidence {
   display: grid;
-  grid-template-columns: 1fr 1.3fr;
+  grid-template-columns: 1fr;
   gap: 25px;
 }
 .health-run-evidence h4 {

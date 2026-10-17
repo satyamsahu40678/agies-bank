@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { api, dateTime, money, useResource } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { ChatMarkdown } from "@/components/chat-markdown";
+import { customerAgentName } from "@/lib/customer-labels";
 import {
   Button,
   Card,
@@ -225,15 +227,6 @@ export default function Assistant() {
   const recipient = beneficiaries.data?.find(
     (item) => item.id === proposal?.beneficiary_id,
   );
-  const local = !health.data || health.data.ai_mode === "local";
-  const providerName =
-    health.data?.ai_mode === "openai"
-      ? "OpenAI"
-      : health.data?.ai_mode === "gemini"
-        ? "Gemini"
-        : health.data?.ai_mode === "openrouter"
-          ? "OpenRouter"
-          : "Claude";
   return (
     <div className="assistant-page">
       <PageHeader
@@ -243,11 +236,7 @@ export default function Assistant() {
         action={
           <div className="assistant-mode">
             <span className="pulse-dot" />
-            {health.data
-              ? local
-                ? "Local agent mode"
-                : `${providerName} agent mode`
-              : "Connecting agents"}
+            {health.data ? "Ready to help" : "Connecting…"}
           </div>
         }
       />
@@ -263,7 +252,7 @@ export default function Assistant() {
             </div>
             <span className="chat-protected">
               <ShieldCheck size={13} />
-              Governed by policy
+              You stay in control
             </span>
           </div>
           <div
@@ -316,36 +305,14 @@ export default function Assistant() {
                   <div className="message-body">
                     {message.role !== "user" && (
                       <span className="message-agent">
-                        {(message.agent || "Aegis assistant").replaceAll(
-                          "_",
-                          " ",
-                        )}
+                        {customerAgentName(message.agent)}
                       </span>
                     )}
-                    <div className="message-content">{message.content}</div>
-                    {message.result?.tools?.length ? (
-                      <details className="message-tools">
-                        <summary>
-                          <ShieldCheck size={12} />
-                          {message.result.tools.length} governed tool
-                          {message.result.tools.length > 1 ? "s" : ""} used
-                          <ChevronDown size={12} />
-                        </summary>
-                        <div>
-                          {message.result.tools.map((tool, index) => (
-                            <div key={`${tool.name}-${index}`}>
-                              <Check size={12} />
-                              <div>
-                                <strong>
-                                  {tool.name.replaceAll("_", " ")}
-                                </strong>
-                                <p>{tool.summary}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    ) : null}
+                    <div className="message-content">
+                      {message.role === "user" ? message.content : (
+                        <ChatMarkdown>{message.content}</ChatMarkdown>
+                      )}
+                    </div>
                     {message.result?.citations?.length ? (
                       <div className="chat-citations">
                         {message.result.citations.map((citation, index) => (
@@ -401,12 +368,6 @@ export default function Assistant() {
                     )}
                     <span className="message-time">
                       {dateTime(message.created_at)}
-                      {message.result?.trace_id && (
-                        <span>
-                          {" "}
-                          · Trace {message.result.trace_id.slice(0, 8)}
-                        </span>
-                      )}
                     </span>
                   </div>
                 </div>
@@ -491,8 +452,7 @@ export default function Assistant() {
           <div className="chat-composer-note">
             <ShieldCheck size={11} />
             <span>
-              {local ? "Deterministic local agents" : `${providerName} agents`}{" "}
-              · Payments always require your confirmation.
+              Payments always require your confirmation.
             </span>
           </div>
         </Card>
@@ -502,33 +462,33 @@ export default function Assistant() {
               <span className="mini-ai-icon">
                 <Bot size={17} />
               </span>
-              <h3>One team. Five perspectives.</h3>
+              <h3>Your banking team</h3>
             </div>
             <div className="specialist-list">
               {[
                 {
-                  name: "Identity",
-                  text: "KYC evidence and screening",
+                  name: "Identity guide",
+                  text: "Help with your verification steps",
                   icon: Fingerprint,
                 },
                 {
-                  name: "Fraud & security",
-                  text: "Risk signals and anomaly checks",
+                  name: "Security guardian",
+                  text: "Understand alerts and unusual activity",
                   icon: ShieldCheck,
                 },
                 {
-                  name: "Banking",
-                  text: "Balances, budgets and payment proposals",
+                  name: "Banking assistant",
+                  text: "Balances, budgets and payment planning",
                   icon: Wallet,
                 },
                 {
-                  name: "Documents",
-                  text: "Answers grounded in your sources",
+                  name: "Document guide",
+                  text: "Clear answers from your documents",
                   icon: BookOpen,
                 },
                 {
-                  name: "Recommendations",
-                  text: "Loans, insurance and affordability",
+                  name: "Money coach",
+                  text: "Explore options that fit your budget",
                   icon: CreditCard,
                 },
               ].map((item) => (
@@ -547,8 +507,7 @@ export default function Assistant() {
             <div className="context-note">
               <Sparkles size={13} />
               <p>
-                An orchestrator connects specialists to the right tools for your
-                question.
+                Your banking team helps you turn a question into a clear next step.
               </p>
             </div>
           </Card>
@@ -561,39 +520,25 @@ export default function Assistant() {
               </div>
               <div>
                 <Check size={14} />
-                <p>Every decision leaves an audit trail.</p>
+                <p>See important updates in your activity history.</p>
               </div>
               <div>
                 <Check size={14} />
-                <p>High-risk actions need a human review.</p>
+                <p>Unusual activity gets an extra review.</p>
               </div>
             </div>
             <Link href="/activity" className="button button-ghost">
-              Inspect agent activity
+              View your activity
               <ChevronRight size={13} />
             </Link>
           </Card>
           {lastResponse && (
             <Card className="last-execution">
-              <p className="eyebrow">LAST EXECUTION</p>
-              <strong>{lastResponse.agent.replaceAll("_", " ")}</strong>
-              <div className="execution-tools">
-                {lastResponse.tools.map((tool, index) => (
-                  <span key={`${tool.name}-${index}`}>
-                    {tool.name.replaceAll("_", " ")}
-                  </span>
-                ))}
-              </div>
-              <p className="trace-id">{lastResponse.trace_id}</p>
+              <p className="eyebrow">YOUR ASSISTANT</p>
+              <strong>{customerAgentName(lastResponse.agent)}</strong>
+              <p>Here to help with your latest question.</p>
             </Card>
           )}
-          <p className="assistant-disclosure">
-            {local
-              ? "Local agents use deterministic routing and rules."
-              : `${providerName} provides model-assisted routing with governed tool execution.`}{" "}
-            Guidance is informational. Synthetic providers are used in the demo;
-            no financial product is issued.
-          </p>
         </aside>
       </div>
       {proposal && (
@@ -639,9 +584,7 @@ export default function Assistant() {
                 }}
               >
                 <Notice tone="warning">
-                  This payment requires additional verification. This demo uses
-                  your account password; production requires a real MFA
-                  provider.
+                  Confirm this payment with your account password.
                 </Notice>
                 <Field label="Account password (demo verification)">
                   <input

@@ -4,6 +4,28 @@ Verification uses synthetic records, local provider fixtures and live provider c
 The authoritative-storage tests use the actual official Firestore emulator,
 not a SQL database disguised as Firestore.
 
+## Customer workspace and Markdown — 2026-10-17
+
+- TypeScript and the production Next.js build passed; npm audit reports zero
+  vulnerabilities after adding `react-markdown` and `remark-gfm`.
+- All **17 production-local browser journeys passed**. The new Markdown journey
+  exercises saved history, new replies, reload persistence, headings, emphasis,
+  lists, tables, code and links, while rejecting raw HTML and unsafe link
+  protocols and preserving literal user messages.
+- Customer messages and panels show friendly specialist names and omit tool
+  lists, trace IDs and routing disclosures. The browser test supplies real tool
+  metadata in its fixture and confirms it is absent from the customer view.
+- At a 1280 × 420 viewport, the sidebar scrolls and Sign out remains reachable.
+  Existing mobile navigation and overflow checks also passed.
+- The financial-review journey still verifies persisted backend tool/trace
+  evidence through the API, then checks the customer-facing review summary.
+  Payment conservation/consent, source citations, identity review, schedules,
+  analyst controls and ledger reconciliation journeys also passed.
+
+These frontend checks use isolated synthetic local data and mocked Markdown
+responses. Live Gemini inference is recorded separately below. Automatic main
+release outcomes are recorded in repository Actions.
+
 ## Gemini provider switch — 2026-10-17
 
 The API and durable worker/schema jobs were reconfigured to select Gemini and
