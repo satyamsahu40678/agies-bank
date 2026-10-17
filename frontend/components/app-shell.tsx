@@ -267,9 +267,13 @@ export function AppShell({
                   ? "Claude mode"
                   : health.data?.ai_mode === "openai"
                     ? "OpenAI mode"
-                    : health.data
-                      ? "Local mode"
-                      : "Connecting"}
+                    : health.data?.ai_mode === "gemini"
+                      ? "Gemini mode"
+                      : health.data?.ai_mode === "openrouter"
+                        ? "OpenRouter mode"
+                        : health.data
+                          ? "Local mode"
+                          : "Connecting"}
               </span>
             </div>
             <Shield size={17} />
