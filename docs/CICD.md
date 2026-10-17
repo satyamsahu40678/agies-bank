@@ -19,7 +19,7 @@ repository/environment variables may override them when intentionally moving
 the deployment.
 
 Hosted releases default to `AEGIS_AI_PROVIDER=gemini` and
-`GEMINI_MODEL=gemini-3.8-flash`. These optional nonsecret Actions variables can
+`GEMINI_MODEL=gemini-3.1-flash-lite`. These optional nonsecret Actions variables can
 override the selection. `GEMINI_API_KEY` stays in Secret Manager; its latest
 version must be enabled and readable by `agies-runtime`. The script checks the
 selected Gemini secret before building and replaces the API/job secret bindings,

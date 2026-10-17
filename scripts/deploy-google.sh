@@ -11,7 +11,7 @@ deploy_mode="${DEPLOY_MODE:-demo}"
 phase="${DEPLOY_PHASE:-all}"
 initialize_schema="${INITIALIZE_SCHEMA:-false}"
 ai_provider="${AEGIS_AI_PROVIDER:-gemini}"
-gemini_model="${GEMINI_MODEL:-gemini-3.8-flash}"
+gemini_model="${GEMINI_MODEL:-gemini-3.1-flash-lite}"
 case "$ai_provider" in
   auto|local|claude|openai|gemini|openrouter) ;;
   *) printf 'AEGIS_AI_PROVIDER must name a supported provider.\n' >&2; exit 2 ;;

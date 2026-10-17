@@ -69,7 +69,7 @@ jobs:
       DEPLOY_REVISION: ${{ needs.verified-source.outputs.revision }}
       INITIALIZE_SCHEMA: 'false'
       AEGIS_AI_PROVIDER: ${{ vars.AEGIS_AI_PROVIDER || 'gemini' }}
-      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.1-flash-lite' }}
       OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'openrouter/free' }}
       NEXT_TELEMETRY_DISABLED: '1'
     steps:

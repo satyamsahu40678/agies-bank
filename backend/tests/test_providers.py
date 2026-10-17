@@ -160,7 +160,7 @@ def test_gemini_key_auto_selection_model_discovery_and_check(clean_provider_env,
             json={
                 "models": [
                     {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent"]},
-                    {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/gemini-3.1-flash-lite", "supportedGenerationMethods": ["generateContent"]},
                     {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]},
                 ]
             },
@@ -172,11 +172,11 @@ def test_gemini_key_auto_selection_model_discovery_and_check(clean_provider_env,
         "Client",
         lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
     )
-    assert providers.resolve_gemini_model() == "gemini-2.5-flash"
-    assert providers.resolve_gemini_model() == "gemini-2.5-flash"
+    assert providers.resolve_gemini_model() == "gemini-3.1-flash-lite"
+    assert providers.resolve_gemini_model() == "gemini-3.1-flash-lite"
     checked = providers.check_gemini()
     assert checked["status"] == "ok"
-    assert checked["model"] == "gemini-2.5-flash"
+    assert checked["model"] == "gemini-3.1-flash-lite"
     assert len(requests) == 2
     status = {item["id"]: item for item in providers.integration_status()["providers"]}
     assert status["gemini"]["status"] == "configured"
@@ -219,12 +219,12 @@ def test_gemini_chat_uses_scoped_tools_and_hides_customer_identifiers(
 ):
     db, user, *_ = intelligence_db
     monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
     payloads = []
 
     def handle(request):
         assert request.headers["x-goog-api-key"] == "synthetic-gemini-key"
-        assert request.url.path == "/v1beta/models/gemini-3.8-flash:generateContent"
+        assert request.url.path == "/v1beta/models/gemini-3.1-flash-lite:generateContent"
         payload = json.loads(request.content)
         payloads.append(payload)
         if len(payloads) == 1:

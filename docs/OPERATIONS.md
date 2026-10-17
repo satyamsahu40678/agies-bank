@@ -38,7 +38,7 @@ container build.
 | `AEGIS_ALLOWED_ORIGINS` | Explicit allowed origins; HTTPS only in hosted mode |
 | `AEGIS_AI_PROVIDER` | `auto`, `local`, `openrouter`, `gemini`, `openai`, `claude` |
 | `GEMINI_API_KEY` | Backend-only Secret Manager binding; required for hosted Gemini |
-| `GEMINI_MODEL` | Hosted default `gemini-3.8-flash`; applies to chat, documents and assisted image review |
+| `GEMINI_MODEL` | Hosted default `gemini-3.1-flash-lite`; applies to chat, documents and assisted image review |
 | `OPENROUTER_API_KEY` | Optional backend-only key; default model `openrouter/free` |
 | `AEGIS_WORKER_ENABLED` | Enables development polling; false in hosted services |
 

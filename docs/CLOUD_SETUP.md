@@ -21,7 +21,7 @@ them, and Firebase Hosting forwards the public HTTPS requests to the web service
 
 Owner setup completed for project `agies-bank`: the required APIs and distinct
 runtime/build/scheduler identities are configured. Current deployment defaults
-select `gemini` and pin `GEMINI_MODEL=gemini-3.8-flash`. Keep enabled latest
+select `gemini` and pin `GEMINI_MODEL=gemini-3.1-flash-lite`. Keep enabled latest
 versions of `AGIES_SECRET` and `GEMINI_API_KEY` in Secret Manager, readable by
 the runtime identity. The API and both durable jobs receive the same provider,
 model and secret bindings. Removed secrets are omitted on the next deployment.
