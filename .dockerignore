@@ -14,5 +14,6 @@ attachments
 agies-bank-*.json
 **/*service-account*.json
 **/chat.json
+**/gha-creds-*.json
 backend/requirements-dev.lock
 backend/tests

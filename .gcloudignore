@@ -11,6 +11,7 @@
 agies-bank-*.json
 **/*service-account*.json
 **/chat.json
+**/gha-creds-*.json
 logs
 test-results
 playwright-report

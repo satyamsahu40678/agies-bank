@@ -21,3 +21,4 @@ logs/
 *.log
 open-venv/
 .firebase/
+gha-creds-*.json
