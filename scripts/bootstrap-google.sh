@@ -32,4 +32,4 @@ if ! gcloud secrets describe AGIES_SECRET --project "$project" >/dev/null 2>&1; 
   gcloud secrets create AGIES_SECRET --replication-policy=automatic --project "$project"
   python3 -c 'import secrets; print(secrets.token_hex(32), end="")' | gcloud secrets versions add AGIES_SECRET --data-file=- --project "$project" >/dev/null
 fi
-printf 'Cloud identities and services configured. Ensure AGIES_SECRET has an enabled version. Optional OPENROUTER_API_KEY belongs in Secret Manager.\n'
+printf 'Cloud identities and services configured. Ensure AGIES_SECRET and the selected provider key (GEMINI_API_KEY by default) have enabled versions in Secret Manager.\n'

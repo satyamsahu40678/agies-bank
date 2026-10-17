@@ -11,7 +11,7 @@ Open the [hosted demo](https://agies-bank.web.app) and choose **Customer demo** 
 | Web | Next.js 15, React 19, TypeScript, responsive customer and analyst workspaces |
 | API | Python 3.12, FastAPI, Argon2 passwords, opaque server sessions and CSRF |
 | Storage | Firestore Native; atomic ledger, transfer, audit and durable-job commits |
-| Agents and AI | Scoped specialist tools, four scheduled reviews, OpenRouter/free and optional Gemini/Claude/OpenAI |
+| Agents and AI | Scoped specialist tools, four scheduled reviews, hosted Gemini 3.8 Flash and optional OpenRouter/Claude/OpenAI |
 | Documents | pypdf/text extraction, tenant-scoped lexical retrieval and checked citations |
 | Hosting | Firebase Hosting → Cloud Run web/API; Cloud Scheduler → finite worker job |
 | Delivery | GitHub Actions checks, keyless Google identity, Cloud Build and Artifact Registry |
@@ -63,11 +63,18 @@ ANTHROPIC_API_KEY=
 AEGIS_OPENAI_API_KEY=
 OPENROUTER_API_KEY=
 # Optional model override:
-GEMINI_MODEL=
+GEMINI_MODEL=gemini-3.8-flash
 OPENROUTER_MODEL=openrouter/free
 ```
 
 Restart the backend after editing. Automatic mode selects a configured provider for chat/tools and document synthesis. Precedence is Claude, OpenAI, OpenRouter, then Gemini; set `AEGIS_AI_PROVIDER` to `gemini`, `openai`, `claude` or `openrouter` to choose. OpenRouter defaults to `openrouter/free`; route availability and tool calling vary and can change. OpenRouter is not used for KYC image review. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
+
+Hosted deployments explicitly select **Gemini** with **`gemini-3.8-flash`**.
+Keep `GEMINI_API_KEY` in Secret Manager with an enabled latest version and runtime
+Secret Accessor permission. Pushes to `main` deploy that binding to the API and
+durable jobs. Optional nonsecret Actions variables `AEGIS_AI_PROVIDER` and
+`GEMINI_MODEL` override the hosted selection; adding a secret alone does not
+restart an existing Cloud Run revision.
 
 OpenRouter rate limits, outages, timeouts and unusable model output use the scoped local assistant, with
 a visible notice and `ai_mode=local` on that response. Document fallback keeps

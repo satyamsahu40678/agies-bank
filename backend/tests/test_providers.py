@@ -219,18 +219,22 @@ def test_gemini_chat_uses_scoped_tools_and_hides_customer_identifiers(
 ):
     db, user, *_ = intelligence_db
     monkeypatch.setenv("GEMINI_API_KEY", "synthetic-gemini-key")
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
     payloads = []
 
     def handle(request):
         assert request.headers["x-goog-api-key"] == "synthetic-gemini-key"
-        assert request.url.path == "/v1beta/models/gemini-test-model:generateContent"
+        assert request.url.path == "/v1beta/models/gemini-3.8-flash:generateContent"
         payload = json.loads(request.content)
         payloads.append(payload)
         if len(payloads) == 1:
-            parts = [{"functionCall": {"name": "get_balance", "args": {}}}]
+            parts = [{
+                "functionCall": {"name": "get_balance", "args": {}},
+                "thoughtSignature": "opaque-gemini-tool-continuation",
+            }]
         else:
             assert payload["contents"][-1]["role"] == "user"
+            assert payload["contents"][-2]["parts"][0]["thoughtSignature"] == "opaque-gemini-tool-continuation"
             parts = [
                 {"text": "hidden internal thought", "thought": True},
                 {"text": "Your available balance is INR 20000.00."},
@@ -255,6 +259,7 @@ def test_gemini_chat_uses_scoped_tools_and_hides_customer_identifiers(
     assert result["tools"][0]["name"] == "get_balance"
     assert "INR 20000.00" in result["reply"]
     assert "hidden internal thought" not in result["reply"]
+    assert "opaque-gemini-tool-continuation" not in json.dumps(result)
     assert "synthetic@example.test" not in json.dumps(payloads)
     assert "123456789012" not in json.dumps(payloads)
     assert payloads[0]["tools"][0]["functionDeclarations"]

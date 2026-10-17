@@ -19,14 +19,16 @@ The deployment branch is `main`; its merge contains the complete tested
 Firestore migration. Cloud Build built the API and web images, Cloud Run hosts
 them, and Firebase Hosting forwards the public HTTPS requests to the web service.
 
-Owner setup completed for project `agies-bank`: the required APIs, distinct
-runtime/build/scheduler identities, and enabled `AGIES_SECRET` and
-`OPENROUTER_API_KEY` versions were verified. The runtime successfully loaded the
-secrets without exposing their values. A real OpenRouter `openrouter/free`
-request called the scoped balance tool and returned an answer from Firestore;
-grounded policy inference was also exercised. Rate limits, transient outages
-and timeouts use a visibly disclosed local assistant response. Protocol and
-citation validation remain enforced. Executed outcomes are in VALIDATION.md.
+Owner setup completed for project `agies-bank`: the required APIs and distinct
+runtime/build/scheduler identities are configured. Current deployment defaults
+select `gemini` and pin `GEMINI_MODEL=gemini-3.8-flash`. Keep enabled latest
+versions of `AGIES_SECRET` and `GEMINI_API_KEY` in Secret Manager, readable by
+the runtime identity. The API and both durable jobs receive the same provider,
+model and secret bindings. Removed secrets are omitted on the next deployment.
+Earlier OpenRouter inference and its rate-limit fallback were verified before
+the provider switch; that historical evidence does not validate Gemini.
+Protocol and citation validation remain enforced. Executed outcomes are in
+VALIDATION.md.
 
 The `(default)` Firestore Native database is in `nam5`. Schema version 2 was
 initialized on the previously empty target, and demo startup created synthetic

@@ -18,11 +18,14 @@ in GitHub. The workflow includes this project's nonsecret provider/account IDs;
 repository/environment variables may override them when intentionally moving
 the deployment.
 
-The optional nonsecret repository/environment variable `OPENROUTER_MODEL`
-selects the hosted model on subsequent releases; the default is
-`openrouter/free`. To keep free inference while selecting a specific model,
-choose an available supported `:free` model ID. Keep the API key in Secret
-Manager. The deployment script validates the model ID before any rollout.
+Hosted releases default to `AEGIS_AI_PROVIDER=gemini` and
+`GEMINI_MODEL=gemini-3.8-flash`. These optional nonsecret Actions variables can
+override the selection. `GEMINI_API_KEY` stays in Secret Manager; its latest
+version must be enabled and readable by `agies-runtime`. The script checks the
+selected Gemini secret before building and replaces the API/job secret bindings,
+so a removed OpenRouter key is not retained in new revisions. Adding or rotating
+a secret requires a new deployment for environment-injected values to reload.
+`OPENROUTER_MODEL` remains available when deliberately selecting OpenRouter.
 
 Run once in Google Cloud Shell as the project owner:
 

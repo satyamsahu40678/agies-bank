@@ -68,6 +68,8 @@ jobs:
       DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
       DEPLOY_REVISION: ${{ needs.verified-source.outputs.revision }}
       INITIALIZE_SCHEMA: 'false'
+      AEGIS_AI_PROVIDER: ${{ vars.AEGIS_AI_PROVIDER || 'gemini' }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
       OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'openrouter/free' }}
       NEXT_TELEMETRY_DISABLED: '1'
     steps:

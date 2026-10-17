@@ -1,8 +1,28 @@
 # Verification evidence
 
-Verification uses synthetic records, local provider fixtures and the live OpenRouter configuration. Hosted checks use the actual Firebase URL.
+Verification uses synthetic records, local provider fixtures and live provider configuration. Hosted checks use the actual Firebase URL.
 The authoritative-storage tests use the actual official Firestore emulator,
 not a SQL database disguised as Firestore.
+
+## Gemini provider switch — 2026-10-17
+
+The API and durable worker/schema jobs were reconfigured to select Gemini and
+pin `gemini-3.8-flash`, using the enabled latest `GEMINI_API_KEY` secret version.
+The deleted OpenRouter key binding was removed from those resources. Existing
+Firestore records and sessions were preserved.
+
+- Provider and integration tests: **68 passed**, including native Gemini 3.8
+  function calling with an opaque thought signature preserved for continuation
+  and excluded from the client response. Shell syntax and whitespace checks passed.
+- Hosted `/login`, customer/analyst sign-in, authenticated sessions and logout:
+  HTTP 200. The analyst Gemini check also returned HTTP 200, `status=ok` and
+  `model=gemini-3.8-flash`.
+- Hosted balance chat: HTTP 200 in 11.7 seconds, effective `ai_mode=gemini`,
+  scoped `get_balance` tool invoked, answer present and no local fallback.
+- Hosted document query: HTTP 200, effective `ai_mode=gemini`, a nonempty
+  grounded answer and three allowed source citations.
+- Historical OpenRouter observations below describe the earlier release; they
+  are not the current hosted provider selection.
 
 | Check | Executed outcome |
 | --- | --- |
