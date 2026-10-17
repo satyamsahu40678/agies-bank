@@ -37,7 +37,7 @@ origins="https://${project}.web.app,https://${project}.firebaseapp.com"
 demo_enabled=false
 if [[ "$deploy_mode" == demo ]]; then demo_enabled=true; fi
 api_environment="^@^AEGIS_ENV=${deploy_mode}@AEGIS_DEMO_ENABLED=${demo_enabled}@AEGIS_STORAGE_BACKEND=firestore@AEGIS_AI_PROVIDER=auto@AEGIS_KYC_VISION=auto@AEGIS_ALLOWED_ORIGINS=${origins}@GOOGLE_CLOUD_PROJECT=${project}@FIRESTORE_DATABASE=(default)@AEGIS_WORKER_ENABLED=false@FIRESTORE_AGENT_NOTIFICATIONS=false"
-gcloud builds submit --project "$project" --config cloudbuild.api.yaml --service-account "projects/${project}/serviceAccounts/${build_account}" --substitutions="_IMAGE=${api_image}" .
+gcloud builds submit --polling-interval=5 --project "$project" --config cloudbuild.api.yaml --service-account "projects/${project}/serviceAccounts/${build_account}" --substitutions="_IMAGE=${api_image}" .
 job_args=(--image "$api_image" --region "$region" --project "$project" --service-account "$runtime_account" --set-secrets "$secret_bindings" --set-env-vars "$api_environment" --memory 1Gi --cpu 1 --tasks 1 --parallelism 1 --max-retries 1 --task-timeout 300s)
 # No SQL instance, DATABASE_URL or Alembic is required by either job or service.
 gcloud run jobs deploy aegis-migrate "${job_args[@]}" --command python --args=-m,app.manage,migrate --quiet
@@ -47,7 +47,7 @@ gcloud run jobs execute aegis-migrate --region "$region" --project "$project" --
 gcloud run deploy aegis-api --image "$api_image" --region "$region" --project "$project" --service-account "$runtime_account" --allow-unauthenticated --port 8000 --set-env-vars "$api_environment" --set-secrets "$secret_bindings" --min-instances 0 --max-instances 2 --concurrency 10 --memory 1Gi --cpu 1 --timeout 120 --quiet
 api_url="$(gcloud run services describe aegis-api --region "$region" --project "$project" --format='value(status.url)')"
 python3 scripts/wait_ready.py "${api_url}/api/health"
-gcloud builds submit --project "$project" --config cloudbuild.web.yaml --service-account "projects/${project}/serviceAccounts/${build_account}" --substitutions="_API_INTERNAL_URL=${api_url},_IMAGE=${web_image}" .
+gcloud builds submit --polling-interval=5 --project "$project" --config cloudbuild.web.yaml --service-account "projects/${project}/serviceAccounts/${build_account}" --substitutions="_API_INTERNAL_URL=${api_url},_IMAGE=${web_image}" .
 gcloud run deploy aegis-web --image "$web_image" --region "$region" --project "$project" --service-account "$runtime_account" --allow-unauthenticated --port 3000 --set-env-vars "API_INTERNAL_URL=${api_url}" --min-instances 0 --max-instances 2 --concurrency 20 --memory 512Mi --cpu 1 --timeout 120 --quiet
 web_url="$(gcloud run services describe aegis-web --region "$region" --project "$project" --format='value(status.url)')"
 gcloud run services update aegis-api --project "$project" --region "$region" --update-env-vars "^@^AEGIS_ALLOWED_ORIGINS=${origins},${web_url}" --quiet
