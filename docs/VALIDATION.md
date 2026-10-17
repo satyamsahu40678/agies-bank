@@ -19,13 +19,14 @@ not a SQL database disguised as Firestore.
 | SQLite export → native Firestore domain → schema initialization → ledger reconciliation | Passed against the emulator, with the source hash unchanged |
 | Live Google Cloud credential and project read | Authenticated to `agies-bank`; default Firestore database exists |
 | Live public rollout and hosted smoke check | Passed at https://agies-bank.web.app: Firestore health, secure cookie forwarding, customer APIs, role isolation and logout |
-| GitHub CI for main application/documentation commit `baa56ac` | Passed: [run 39003846285](https://github.com/satyamsahu40678/agies-bank/actions/runs/39003846285), including all 16 browser journeys |
+| GitHub CI for application commit `2373f97` on `main` | Passed: [run 39004983557](https://github.com/satyamsahu40678/agies-bank/actions/runs/39004983557), including all 16 browser journeys |
 | Cloud Scheduler → authenticated Cloud Run job → due workflow | Passed: document readiness review completed with scoped tools; test schedule paused afterward |
-| Hosted browser coverage | Initial suite: 12 passed. Focused financial-review and shared-policy journeys passed after correction; final assistant continuation retest follows the current rollout |
+| Hosted browser coverage | 15 distinct journeys covered across the initial and focused runs: the original 12 passed, followed by corrected financial-review, shared-policy and assistant-consent journeys |
 | Cloud Build API and web Docker images | Both built and deployed successfully |
 | Local Docker Compose execution | Not run: no local Docker engine available |
-| Live model inference | Real balance and grounded policy responses passed. Runtime diagnostics reproduced the free router switching models mid-tool-loop and an upstream HTTP400; continuations now stay on the first selected free model |
-| Main deployment workflow validation | Official hash-verified actionlint passed; first automatic release passed end to end: [run 39003573473](https://github.com/satyamsahu40678/agies-bank/actions/runs/39003573473), including publication and hosted smoke checks |
+| Live assistant and model inference | Passed in 42.5 seconds: native OpenRouter balance and policy answers (3 citations); INR100 proposal used a disclosed local fallback; balance unchanged before consent; explicit confirmation returned a risk-controlled hold |
+| Main automatic deployment | Passed end to end: [run 39005230735](https://github.com/satyamsahu40678/agies-bank/actions/runs/39005230735). Exact-source gate, keyless authentication, both images, schema check, services/jobs, Firebase publication and hosted smoke checks succeeded; official hash-verified actionlint also passed |
+| Final hosted ledger and operations | 3 accounts reconcile; global balance total 0 paise; no mismatches/invalid entries; 27 completed jobs, 0 queued/running/failed jobs and 0 expired leases |
 | Routine rollout schema gate | Compatible schema verified without writes; absent/older/future markers rejected in memory and native Firestore tests |
 
 One existing Starlette/httpx deprecation warning remains. The isolated developer
@@ -86,4 +87,19 @@ fresh synthetic demo rather than an import of the unavailable historical SQLite
 file. The public gateway and scoped balance inference passed. The initial hosted
 browser run also exposed conditions that the local polling-worker fixture did
 not reproduce. CI now disables that worker for browser tests, matching hosted
-mode. The queued-review and shared-policy focused hosted checks passed. Final assistant and automatic release results will be recorded after the current main rollout.
+mode. The queued-review, shared-policy and final assistant focused checks passed. The final assistant run exercised genuine OpenRouter balance/policy inference and a clearly labelled local proposal fallback; confirmation respected the existing fraud evidence and held the transfer. That evidence was preserved.
+
+
+## Final hosted release
+
+Verified on 2026-10-17 at 05:20 UTC (10:50 IST):
+
+- Application source: `2373f97917c7401f06ff51a3f21ff882ecb5009b` on `main`. API and web images both carry that source SHA and `source-branch=main`.
+- Firebase release: `sites/agies-bank/releases/1792214312484000`, message `main@2373f97917c7401f06ff51a3f21ff882ecb5009b`, published 05:18:32 UTC. Hosting forwards to the ready web Run service.
+- API revision `aegis-api-00010-8bg`; web revision `aegis-web-00006-rh7`; worker and schema-check jobs use the same application source.
+- Scheduler is enabled and its last checked invocation succeeded. Latest `AGIES_SECRET` and `OPENROUTER_API_KEY` versions are enabled; no values are recorded here.
+- Same-origin customer/analyst smoke checks passed after rollout. Reconciliation, role boundaries and session revocation passed; the public URL is https://agies-bank.web.app.
+
+The release evidence update changes documentation only. Subsequent ordinary
+main pushes use the same verified automatic CI/CD pipeline. The hosted data is
+synthetic; the unavailable historical 99-row SQLite file has not been imported.

@@ -1,5 +1,9 @@
 # Automatic deployment from main
 
+The live project's keyless trust connection and automatic release have been
+verified end to end; no additional setup is needed for normal pushes to this
+repository. The owner setup commands below document reproduction/recovery.
+
 The deployment source is `main`. Pushes to `main` start **Application checks**.
 After that workflow succeeds, **Deploy Firestore application** automatically
 builds and deploys the exact passing commit. Pull requests and other branches
@@ -38,9 +42,11 @@ already given the deployment account its application deployment permissions.
 
 During implementation, the supplied deployment identity's IAM permission check
 showed that it could not create federation resources or change service-account
-IAM. After owner trust setup, the first automatic workflow accepted the GitHub
-OIDC identity and started Cloud Build. Final executed rollout results are
-recorded in [validation](VALIDATION.md).
+IAM. After owner trust setup, automatic releases completed Cloud Build, schema
+verification, Run updates, Firebase publication and hosted smoke checks. The
+application release for `2373f97` passed in
+[run 39005230735](https://github.com/satyamsahu40678/agies-bank/actions/runs/39005230735).
+Executed results are recorded in [validation](VALIDATION.md).
 
 ## Release sequence
 
