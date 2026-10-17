@@ -14,6 +14,12 @@ in GitHub. The workflow includes this project's nonsecret provider/account IDs;
 repository/environment variables may override them when intentionally moving
 the deployment.
 
+The optional nonsecret repository/environment variable `OPENROUTER_MODEL`
+selects the hosted model on subsequent releases; the default is
+`openrouter/free`. To keep free inference while selecting a specific model,
+choose an available supported `:free` model ID. Keep the API key in Secret
+Manager. The deployment script validates the model ID before any rollout.
+
 Run once in Google Cloud Shell as the project owner:
 
 ```bash

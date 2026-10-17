@@ -69,10 +69,10 @@ OPENROUTER_MODEL=openrouter/free
 
 Restart the backend after editing. Automatic mode selects a configured provider for chat/tools and document synthesis. Precedence is Claude, OpenAI, OpenRouter, then Gemini; set `AEGIS_AI_PROVIDER` to `gemini`, `openai`, `claude` or `openrouter` to choose. OpenRouter defaults to `openrouter/free`; route availability and tool calling vary and can change. OpenRouter is not used for KYC image review. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
 
-OpenRouter rate limits, outages and timeouts use the scoped local assistant, with
+OpenRouter rate limits, outages, timeouts and unusable model output use the scoped local assistant, with
 a visible notice and `ai_mode=local` on that response. Document fallback keeps
-the retrieved source passages. Invalid citations, missing required tool calls
-and rejected credentials remain errors. A validated transfer proposal uses
+the retrieved source passages. Ungrounded answers and invalid citations are discarded before local tools read fresh
+scoped facts. Credential/configuration failures remain errors. A validated transfer proposal uses
 server-authored consent text and requires a separate confirmation.
 
 `GOOGLE_API_KEY` is accepted as a Gemini alias. Local `OPENAI_API_KEY` is accepted as an alias. Optional model overrides are `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `AEGIS_OPENAI_MODEL` and `OPENROUTER_MODEL`; otherwise the app discovers a supported model where implemented. Gemini uses Google's native `generateContent` function calling and sends credentials in an API-key header, not a URL. OpenRouter uses its OpenAI-compatible chat completions API. Allow `generativelanguage.googleapis.com`, `openrouter.ai`, `api.anthropic.com` and/or `api.openai.com` when running behind restricted egress.

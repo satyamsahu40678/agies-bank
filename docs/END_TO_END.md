@@ -65,8 +65,10 @@ continues to influence subsequent demo payments.
    Banking questions require fresh tool results. Document tools retrieve only
    the customer's uploads and shared analyst-published policies.
 4. Model citations are checked against retrieved excerpts. Invalid references
-   fail validation; text from a document cannot grant tool permissions.
-5. OpenRouter rate limits/outages/timeouts use the local scoped assistant with
+   fail validation and the generated answer is discarded; the labelled local
+   alternative retains exact accessible sources. Document text cannot grant tools.
+5. OpenRouter rate limits/outages/timeouts and unusable native tool/output
+   responses use the local scoped assistant with
    a visible notice and `ai_mode=local`. Local document answers quote accessible
    passages. The notice distinguishes these from model-generated synthesis.
 6. A validated transfer proposal uses server-authored confirmation text and

@@ -538,16 +538,44 @@ def _retrieve_documents(
 
 
 class _OpenRouterUnavailable(HTTPException):
-    """Only availability failures may use the scoped local fallback."""
+    """Transport or upstream availability failure."""
 
     def __init__(self):
         super().__init__(503, "OpenRouter is temporarily unavailable.")
+
+
+class _OpenRouterInvalidOutput(HTTPException):
+    """Discard unusable model output before rendering scoped local facts."""
+
+    def __init__(self):
+        super().__init__(503, "OpenRouter could not provide a valid grounded answer.")
 
 
 _OPENROUTER_TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
 _OPENROUTER_FALLBACK_NOTICE = (
     "OpenRouter is temporarily unavailable. This answer uses the local banking assistant."
 )
+
+
+def _openrouter_provider_rejection(response: httpx.Response) -> bool:
+    if response.status_code != 400:
+        return False
+    try:
+        error = response.json().get("error")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(error, dict) and error.get("message") == "Provider returned error"
+
+
+def _openrouter_local_notice(result: dict[str, Any], field: str, error: Exception) -> None:
+    invalid = isinstance(error, _OpenRouterInvalidOutput)
+    notice = (
+        "OpenRouter could not provide a valid grounded answer. This answer uses the local banking assistant."
+        if invalid else _OPENROUTER_FALLBACK_NOTICE
+    )
+    result[field] = notice + "\n\n" + result[field]
+    result["fallback_from"] = "openrouter"
+    result["fallback_reason"] = "invalid_provider_output" if invalid else "provider_unavailable"
 
 
 def query_documents(
@@ -565,10 +593,9 @@ def query_documents(
     elif mode == "openrouter" and result["citations"]:
         try:
             result = _openrouter_document_answer(db, user, question, result["citations"])
-        except _OpenRouterUnavailable:
+        except (_OpenRouterUnavailable, _OpenRouterInvalidOutput) as error:
             mode = "local"
-            result["answer"] = _OPENROUTER_FALLBACK_NOTICE + "\n\n" + result["answer"]
-            result["fallback_from"] = "openrouter"
+            _openrouter_local_notice(result, "answer", error)
     audit(
         db,
         user.id,
@@ -1552,6 +1579,8 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                 )
                 if response.status_code in _OPENROUTER_TRANSIENT_STATUS:
                     raise _OpenRouterUnavailable()
+                if _openrouter_provider_rejection(response):
+                    raise _OpenRouterInvalidOutput()
                 if response.status_code != 200:
                     raise HTTPException(
                         503,
@@ -1576,24 +1605,24 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                 raise
             except httpx.HTTPError:
                 raise _OpenRouterUnavailable() from None
-            except (ValueError, TypeError, IndexError, KeyError):
-                raise HTTPException(
-                    503, "OpenRouter returned an invalid or unavailable response."
-                ) from None
+            except (ValueError, TypeError, IndexError, KeyError, AttributeError):
+                raise _OpenRouterInvalidOutput() from None
             calls = assistant_message.get("tool_calls") or []
             if not isinstance(calls, list):
-                raise HTTPException(503, "OpenRouter returned invalid tool calls.")
+                raise _OpenRouterInvalidOutput()
             if not calls:
                 if required_tool and not any(tool["name"] == required_tool for tool in used_tools):
-                    raise HTTPException(503, "OpenRouter did not return the required scoped banking tool. Retry the request or select a model with native tool support.")
+                    raise _OpenRouterInvalidOutput()
                 content = assistant_message.get("content")
-                reply = content if isinstance(content, str) else ""
+                if not isinstance(content, str) or not content.strip():
+                    raise _OpenRouterInvalidOutput()
+                reply = content
                 break
             normalized_calls = []
             tool_messages = []
             for call in calls:
                 if not isinstance(call, dict):
-                    raise HTTPException(503, "OpenRouter returned invalid tool calls.")
+                    raise _OpenRouterInvalidOutput()
                 function = call.get("function")
                 call_id = call.get("id")
                 if (
@@ -1603,7 +1632,7 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                     or not call_id
                     or len(call_id) > 200
                 ):
-                    raise HTTPException(503, "OpenRouter returned an invalid tool-call identifier.")
+                    raise _OpenRouterInvalidOutput()
                 normalized_calls.append(call)
                 name = function["name"]
                 raw_arguments = function.get("arguments", "{}")
@@ -1652,10 +1681,10 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                 )
                 break
         else:
-            reply = "The assistant reached its tool limit. Completed tool summaries are available; ask a more specific question to continue."
+            raise _OpenRouterInvalidOutput()
     reply = _redact(reply.strip()) or "No supported answer was returned. Try a more specific banking question."
     if any(int(number) < 1 or int(number) > min(len(citations), 6) for number in re.findall(r"\[(\d+)\]", reply)):
-        raise HTTPException(503, "The OpenRouter assistant returned a reference outside the retrieved source citations.")
+        raise _OpenRouterInvalidOutput()
     if proposal:
         reply += "\n\nTransfer proposal only: no money has moved. Review and explicitly submit it in Payments; risk controls still apply."
     result = {"reply": reply, "agent": agents[0] if len(agents) == 1 else "orchestrator", "tools": used_tools, "citations": citations[:6]}
@@ -1829,11 +1858,11 @@ def chat(db: Any, user: Any, message: str) -> dict[str, Any]:
     elif mode == "openrouter":
         try:
             result = _openrouter_chat(context, message)
-        except _OpenRouterUnavailable:
+        except (_OpenRouterUnavailable, _OpenRouterInvalidOutput) as error:
             mode = "local"
             result = _local_chat(context, message)
-            result["reply"] = _OPENROUTER_FALLBACK_NOTICE + "\n\n" + result["reply"]
-            result["fallback_from"] = "openrouter"
+            _openrouter_local_notice(result, "reply", error)
+            audit(db, user.id, "orchestrator", "assistant_provider_fallback", f"Completed with local scoped tools after {result['fallback_reason']}; discarded provider output was not retained.", [], trace_id=trace_id)
     else:
         result = _local_chat(context, message)
     result["trace_id"] = trace_id
@@ -2467,6 +2496,8 @@ def _openrouter_document_answer(
             )
             if response.status_code in _OPENROUTER_TRANSIENT_STATUS:
                 raise _OpenRouterUnavailable()
+            if _openrouter_provider_rejection(response):
+                raise _OpenRouterInvalidOutput()
             if response.status_code != 200:
                 raise HTTPException(503, "OpenRouter could not answer from the supplied document excerpts.")
             body = response.json()
@@ -2485,16 +2516,16 @@ def _openrouter_document_answer(
             if not fenced:
                 raise ValueError("Invalid document answer")
             content = fenced.group(1)
-        return _checked_document_answer(json.loads(content), citations, names)
+        try:
+            return _checked_document_answer(json.loads(content), citations, names)
+        except HTTPException:
+            raise _OpenRouterInvalidOutput() from None
     except HTTPException:
         raise
     except httpx.HTTPError:
         raise _OpenRouterUnavailable() from None
     except (ValueError, TypeError, KeyError, IndexError):
-        raise HTTPException(
-            503,
-            "OpenRouter could not return a valid answer with allowed source citations.",
-        ) from None
+        raise _OpenRouterInvalidOutput() from None
 
 
 def _openai_kyc_evidence(

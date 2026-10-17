@@ -100,8 +100,13 @@ to that same model and is never saved in chat/audit records or sent to the UI.
 
 OpenRouter's tool loop has a 40-second budget within the web proxy's 55-second
 window. Rate limits, transient server errors and transport timeouts use the
-existing scoped local tools and disclose that local mode in the answer and
-response metadata. Citation/protocol and credential failures remain errors.
+existing scoped local tools and disclose local mode in the answer and response
+metadata. Unusable model answers, invalid references and exhausted native loops
+are discarded before a labelled local answer is produced. Provider credential
+and configuration failures remain errors. Fallback invokes the same server
+scopes and never returns discarded provider content. Citation checks validate
+references to permitted excerpts; synthesis remains guidance with source previews
+for customer review.
 Successful transfer proposals use server-authored consent text immediately
 after the validating tool; a later model completion cannot assert settlement.
 

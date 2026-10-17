@@ -87,10 +87,12 @@ Document uploads are bounded to 300 extracted chunks per atomic write.
 Chat and document-query responses include `ai_mode`, reporting the provider
 actually used for the answer. An OpenRouter rate limit, transient server failure
 or network timeout returns a scoped local answer with `ai_mode:'local'`,
-`fallback_from:'openrouter'` and a visible notice in `reply`/`answer`. Local
-document answers retain exact accessible excerpts/citations. Provider credential
-or configuration errors, malformed answers, invalid citations and missing
-required tools continue to return an error. The assistant's provider loop has a
+`fallback_from:'openrouter'`, `fallback_reason` and a visible notice in `reply`/`answer`. Local
+document answers retain exact accessible excerpts/citations. Unusable model output (including malformed answers, invalid citations, missing
+required tools and exhausted native loops) is discarded and replaced with a
+labelled local answer; `fallback_reason` is `invalid_provider_output` or
+`provider_unavailable`. Provider credential/configuration errors still return an
+error. Source retrieval and role/tenant checks apply before and during fallback. The assistant's provider loop has a
 40-second budget within the hosted gateway's 55-second proxy window.
 
 A successful OpenRouter `propose_transfer` tool returns server-authored consent

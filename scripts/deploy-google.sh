@@ -10,6 +10,10 @@ revision="${DEPLOY_REVISION:-$(git -C "$repo_dir" rev-parse --short HEAD)}"
 deploy_mode="${DEPLOY_MODE:-demo}"
 phase="${DEPLOY_PHASE:-all}"
 initialize_schema="${INITIALIZE_SCHEMA:-false}"
+openrouter_model="${OPENROUTER_MODEL:-openrouter/free}"
+if [[ ! "$openrouter_model" =~ ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$ ]]; then
+  printf 'OPENROUTER_MODEL must be a valid model ID.\n' >&2; exit 2
+fi
 if [[ ! "$revision" =~ ^[a-f0-9]{7,40}$ ]]; then
   printf 'DEPLOY_REVISION must identify the source Git commit.\n' >&2; exit 2
 fi
@@ -63,7 +67,7 @@ secret_bindings="$(IFS=,; printf '%s' "${api_secrets[*]}")"
 origins="https://${project}.web.app,https://${project}.firebaseapp.com"
 demo_enabled=false
 if [[ "$deploy_mode" == demo ]]; then demo_enabled=true; fi
-api_environment="^@^AEGIS_ENV=${deploy_mode}@AEGIS_DEMO_ENABLED=${demo_enabled}@AEGIS_STORAGE_BACKEND=firestore@AEGIS_AI_PROVIDER=auto@AEGIS_KYC_VISION=auto@AEGIS_ALLOWED_ORIGINS=${origins}@GOOGLE_CLOUD_PROJECT=${project}@FIRESTORE_DATABASE=(default)@AEGIS_WORKER_ENABLED=false@FIRESTORE_AGENT_NOTIFICATIONS=false"
+api_environment="^@^AEGIS_ENV=${deploy_mode}@AEGIS_DEMO_ENABLED=${demo_enabled}@AEGIS_STORAGE_BACKEND=firestore@AEGIS_AI_PROVIDER=auto@OPENROUTER_MODEL=${openrouter_model}@AEGIS_KYC_VISION=auto@AEGIS_ALLOWED_ORIGINS=${origins}@GOOGLE_CLOUD_PROJECT=${project}@FIRESTORE_DATABASE=(default)@AEGIS_WORKER_ENABLED=false@FIRESTORE_AGENT_NOTIFICATIONS=false"
 gcloud builds submit --polling-interval=5 --project "$project" --config cloudbuild.api.yaml --service-account "projects/${project}/serviceAccounts/${build_account}" --substitutions="_IMAGE=${api_image}" .
 job_args=(--image "$api_image" --region "$region" --project "$project" --service-account "$runtime_account" --set-secrets "$secret_bindings" --set-env-vars "$api_environment" --labels "source-branch=main,source-commit=${revision}" --memory 1Gi --cpu 1 --tasks 1 --parallelism 1 --max-retries 1 --task-timeout 300s)
 # No SQL instance, DATABASE_URL or Alembic is required by either job or service.

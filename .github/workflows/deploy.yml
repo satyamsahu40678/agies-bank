@@ -68,6 +68,7 @@ jobs:
       DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
       DEPLOY_REVISION: ${{ needs.verified-source.outputs.revision }}
       INITIALIZE_SCHEMA: 'false'
+      OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'openrouter/free' }}
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4

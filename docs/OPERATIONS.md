@@ -46,8 +46,9 @@ use ADC or `GOOGLE_APPLICATION_CREDENTIALS` pointing outside the checkout.
 Cloud Run uses its service identity and should never carry a JSON key file.
 Provider keys must not reach the browser environment or source archives.
 
-OpenRouter availability failures use disclosed local scoped answers; invalid
-provider output/credentials remain errors. `/chat` and `/documents/query`
+OpenRouter availability failures and unusable model output use disclosed local
+scoped answers. Rejected model content is discarded; credential/configuration
+errors remain operator-visible errors. `/chat` and `/documents/query`
 report the effective `ai_mode` and optional `fallback_from`. Catalog connection
 checks are separate from inference. See API_CONTRACT.md for the response shape.
 

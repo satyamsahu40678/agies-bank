@@ -10,7 +10,7 @@ Scope comes from the uploaded deck and the attached conversation, including appr
 | Bank core | Persistent integer-paise double-entry ledger; customer/clearing conservation; idempotent payments; no overdrafts; balance rechecks |
 | Governed transfers | Customer confirmation; low-risk settlement, password re-authentication, high-risk holds and analyst decisions |
 | Identity | Bounded ID/selfie uploads, evidence hashes, local validation and synthetic sanctions/risk rules; approve/review/reject with analyst controls |
-| Financial assistant | Scoped tools, balances, spending, budgets, affordability, policy citations, server-authored transfer consent text and disclosed OpenRouter availability fallback |
+| Financial assistant | Scoped tools, balances, spending, budgets, affordability, policy citations, server-authored transfer consent text and disclosed OpenRouter fallback |
 | Document intelligence | PDF/text/Markdown/CSV extraction, scoped retrieval, exact source citations, indexed-source preview and optional model-assisted synthesis |
 | Product recommendations | Explainable rule-based loan/term-life estimates and paise-precise EMI calculator; no credit/insurance issuance |
 | Fraud | Amount/z-score/velocity/new-recipient signals, synthetic geo/device/VPN events, calculated impossible-travel speed, alerts, cases and freeze/unfreeze |
@@ -29,7 +29,7 @@ A Gemini, Anthropic, OpenAI or OpenRouter key enables the implemented model-assi
 
 Model-assisted KYC assesses legibility, person presence and name consistency. It is not legal identity proof, liveness, biometric matching or an authoritative sanctions decision. Stored decisions and tool records are summaries, not hidden chain-of-thought.
 
-OpenRouter was enabled through Secret Manager during the live rollout. Its catalog check, real `get_balance` tool-call response and grounded policy answers were exercised using `openrouter/free`. Free-route failures also motivated a disclosed local fallback for rate limits, transient outages and timeouts; effective answer mode is returned separately from configured mode. Other provider protocols remain covered by mocked responses. The analyst connection check verifies catalog access; executed inference and deployment outcomes are recorded separately in VALIDATION.md.
+OpenRouter was enabled through Secret Manager during the live rollout. Its catalog check, real `get_balance` tool-call response and grounded policy answers were exercised using `openrouter/free`. Free-route failures also motivated a disclosed local fallback for rate limits, transient outages, timeouts and discarded unusable model output; effective answer mode is returned separately from configured mode. Other provider protocols remain covered by mocked responses. The analyst connection check verifies catalog access; executed inference and deployment outcomes are recorded separately in VALIDATION.md.
 
 ## Explicitly mocked by the user's decision
 
