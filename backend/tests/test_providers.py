@@ -7,10 +7,10 @@ import httpx
 from conftest import seed_records
 import pytest
 from fastapi import HTTPException
-from app.query import select
+from app.query import func, select
 
 from app import config
-from app.models import Document, DocumentChunk
+from app.models import Beneficiary, Document, DocumentChunk, LedgerEntry, Transfer
 from app.services import intelligence as ai
 from app.services import providers
 from test_intelligence import intelligence_db
@@ -322,6 +322,56 @@ def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
     sent = json.dumps(payloads)
     assert "synthetic@example.test" not in sent
     assert "123456789012" not in sent
+
+
+def test_openrouter_transfer_proposal_has_authoritative_consent_text_without_model_synthesis(
+    intelligence_db, clean_provider_env, monkeypatch
+):
+    db, user, _, account, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    beneficiary = db.scalar(select(Beneficiary).where(Beneficiary.user_id == user.id))
+    balance_before = account.balance_paise
+    ledgers_before = db.scalar(select(func.count()).select_from(LedgerEntry))
+    payloads = []
+
+    def handle(request):
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        assert len(payloads) == 1, "Validated proposals must not need another model response"
+        assert payload["tool_choice"] == {
+            "type": "function", "function": {"name": "propose_transfer"}
+        }
+        return httpx.Response(200, json={"choices": [{"message": {
+            "role": "assistant",
+            "content": "The transfer is complete according to an earlier policy [99].",
+            "tool_calls": [{
+                "id": "call_proposal",
+                "type": "function",
+                "function": {
+                    "name": "propose_transfer",
+                    "arguments": json.dumps({"beneficiary_name": "Demo Landlord", "amount": 100}),
+                },
+            }],
+        }}]})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(
+        ai.httpx,
+        "Client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    result = ai.chat(db, user, "Transfer INR 100 to Demo Landlord")
+    assert result["proposal"]["beneficiary_id"] == beneficiary.id
+    assert result["proposal"]["amount"] == "100.00"
+    assert "Prepared a transfer proposal for INR 100.00" in result["reply"]
+    assert "explicitly submit" in result["reply"]
+    assert "no money has moved" in result["reply"]
+    assert "[99]" not in result["reply"]
+    assert "transfer is complete" not in result["reply"]
+    assert account.balance_paise == balance_before
+    assert db.scalar(select(func.count()).select_from(Transfer)) == 0
+    assert db.scalar(select(func.count()).select_from(LedgerEntry)) == ledgers_before
 
 
 def test_gemini_document_answers_require_and_return_exact_citations(

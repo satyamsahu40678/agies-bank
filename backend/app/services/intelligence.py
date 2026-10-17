@@ -1598,6 +1598,16 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                 "tool_calls": normalized_calls,
             })
             messages.extend(tool_messages)
+            if proposal:
+                # The scoped tool has validated this review-only proposal. Keep
+                # financial consent text authoritative, without asking the model
+                # to synthesize another answer from stale conversation citations.
+                reply = (
+                    f"Prepared a transfer proposal for INR {proposal['amount']}. "
+                    "Review the saved recipient and confirm the payment below. "
+                    "Risk checks and any required verification still apply."
+                )
+                break
         else:
             reply = "The assistant reached its tool limit. Completed tool summaries are available; ask a more specific question to continue."
     reply = _redact(reply.strip()) or "No supported answer was returned. Try a more specific banking question."
