@@ -93,11 +93,32 @@ confirmation. Document answers cite retrieved evidence. OpenRouter does not
 perform image KYC. Synthetic identity, sanctions, bureau, settlement and device
 adapters remain labelled as such; model access does not replace them.
 
+The free router selects a model once per request loop; subsequent tool calls
+stay on that selected `:free` model. Unexpected paid model IDs are never used as
+continuation targets. Required opaque provider state is passed back transiently
+to that same model and is never saved in chat/audit records or sent to the UI.
+
+OpenRouter's tool loop has a 40-second budget within the web proxy's 55-second
+window. Rate limits, transient server errors and transport timeouts use the
+existing scoped local tools and disclose that local mode in the answer and
+response metadata. Citation/protocol and credential failures remain errors.
+Successful transfer proposals use server-authored consent text immediately
+after the validating tool; a later model completion cannot assert settlement.
+
 ## Operations
 
 Firebase Hosting fronts two Cloud Run containers with explicit ports. Secret
-Manager supplies `AGIES_SECRET` and optional provider keys. A schema validation
-job runs before a fresh rollout; it checks references, uniqueness and ledger
-reconciliation. Firestore client rules deny all access. Runtime, build and
+Manager supplies `AGIES_SECRET` and optional provider keys. Explicit offline
+initialization checks references, uniqueness and ledger reconciliation. Routine
+rollouts only check the schema marker; CI/CD cannot invoke the offline importer
+or reinitialize live data by default. Firestore client rules deny all access. Runtime, build and
 scheduler identities have separate roles. Backups, restoration tests and a
 privileged audit archive remain deployment/operator responsibilities.
+
+Push CI on `main` gates automatic deployment. The release workflow verifies the
+exact passing SHA is still the current main head, checks out that SHA and uses
+OIDC federation restricted to the repository ID, owner ID, branch and workflow.
+Cloud images and Run resources carry the source commit. Credentials generated
+by the auth action are excluded from Git, Docker and Cloud Build archives.
+See [CI/CD](CICD.md), [technology and journeys](END_TO_END.md), and
+[future scale work](ROADMAP.md).

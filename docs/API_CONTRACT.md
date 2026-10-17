@@ -4,7 +4,7 @@ All paths below are prefixed `/api`. API errors use HTTP errors with a readable 
 
 ## Authentication
 
-- `GET /health` -> `{status, database, ai_mode}`
+- `GET /health` -> `{status, database, storage, ai_mode, demo_enabled, ...}`; `storage` is `firestore` in hosted mode.
 - `POST /auth/login {email,password}` -> `{user:{id,name,email,role},csrf_token}`
 - `POST /auth/register {name,email,password}` -> same; creates zero-balance account, not free money.
 - `GET /auth/me` -> same.
@@ -47,7 +47,7 @@ Paginate/limit stored history in backend; consistent default arrays for empty re
 
 - `GET /insights` -> `{items:[{id,kind,severity,title,message,action_label,action_path,status,metrics,created_at,updated_at}],summary:{...},latest_run}`; initial summary may be empty while a durable run is queued.
 - `POST /insights/refresh` -> AgentRun, HTTP202; coalesces pending work and permits a fresh review after completion.
-- `GET /notifications/agents` -> `{source:'database'|'firestore',items:[...]}` scoped to the signed-in customer. Firestore is an optional projection of derived agent alerts; SQL remains authoritative and is used as fallback when Firestore is disabled or unavailable.
+- `GET /notifications/agents` -> `{source:'database'|'firestore',items:[...]}` scoped to the signed-in customer. `database` means the authoritative application repository, which is Firestore in hosted mode. An optional separate Firestore notification projection may serve derived alerts; projection failure falls back to authoritative Firestore records. There is no SQL fallback.
 - `POST /insights/{id}/dismiss` -> insight; only the owning customer can dismiss it.
 - `GET /agent-runs` -> owned run list with status, attempts, max_attempts, tools, decisions, trace_id, output, error and timestamps. Jobs are read-only financial reviews, never transfer execution.
 - `POST /agent-runs/{id}/retry` -> AgentRun, HTTP202; only failed owned runs, bounded manual retries.
@@ -83,3 +83,17 @@ partial writes; clients must retain the transfer idempotency key when retrying.
 `/health` reports the actual storage adapter. Hosted cookies use Secure HttpOnly
 `__session` to pass through Firebase Hosting; session values never appear in logs.
 Document uploads are bounded to 300 extracted chunks per atomic write.
+
+Chat and document-query responses include `ai_mode`, reporting the provider
+actually used for the answer. An OpenRouter rate limit, transient server failure
+or network timeout returns a scoped local answer with `ai_mode:'local'`,
+`fallback_from:'openrouter'` and a visible notice in `reply`/`answer`. Local
+document answers retain exact accessible excerpts/citations. Provider credential
+or configuration errors, malformed answers, invalid citations and missing
+required tools continue to return an error. The assistant's provider loop has a
+40-second budget within the hosted gateway's 55-second proxy window.
+
+A successful OpenRouter `propose_transfer` tool returns server-authored consent
+text. Model prose cannot claim settlement or add stale document citations to the
+proposal. `POST /transfers` remains the separate, idempotent confirmation action;
+the proposal itself changes no balances or ledger entries.

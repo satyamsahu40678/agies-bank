@@ -4,6 +4,25 @@ A runnable, governed agentic banking application with customer and analyst works
 
 Open the [hosted demo](https://agies-bank.web.app) and choose **Customer demo** or **Analyst demo**. Deployment and further changes use `main`.
 
+## Technology and end-to-end flow
+
+| Layer | Technology and responsibility |
+| --- | --- |
+| Web | Next.js 15, React 19, TypeScript, responsive customer and analyst workspaces |
+| API | Python 3.12, FastAPI, Argon2 passwords, opaque server sessions and CSRF |
+| Storage | Firestore Native; atomic ledger, transfer, audit and durable-job commits |
+| Agents and AI | Scoped specialist tools, four scheduled reviews, OpenRouter/free and optional Gemini/Claude/OpenAI |
+| Documents | pypdf/text extraction, tenant-scoped lexical retrieval and checked citations |
+| Hosting | Firebase Hosting → Cloud Run web/API; Cloud Scheduler → finite worker job |
+| Delivery | GitHub Actions checks, keyless Google identity, Cloud Build and Artifact Registry |
+
+The customer signs in, reads a Firestore-backed overview, manages budgets/goals,
+queries documents and reviews assistant proposals. A confirmed transfer passes
+server risk checks before atomic settlement, a password challenge or an analyst
+hold. Committed events queue durable reviews; schedules continue when the API
+scales to zero. The analyst resolves cases and checks ledger reconciliation.
+See [complete flows](docs/END_TO_END.md) and [architecture](docs/ARCHITECTURE.md).
+
 Banking, identity/sanctions, bureau and geo/device providers use explicit synthetic adapters, as requested. No real money moves. AI keys enable the implemented model-assisted capabilities; they do not establish a real bank or legal identity-provider connection.
 
 ![AegisBank customer overview](docs/images/dashboard.png)
@@ -50,6 +69,12 @@ OPENROUTER_MODEL=openrouter/free
 
 Restart the backend after editing. Automatic mode selects a configured provider for chat/tools and document synthesis. Precedence is Claude, OpenAI, OpenRouter, then Gemini; set `AEGIS_AI_PROVIDER` to `gemini`, `openai`, `claude` or `openrouter` to choose. OpenRouter defaults to `openrouter/free`; route availability and tool calling vary and can change. OpenRouter is not used for KYC image review. Set `local` to run without model calls. `AEGIS_AI_MODE` remains a compatibility setting, and `AEGIS_KYC_VISION` can override the image-assessment provider independently.
 
+OpenRouter rate limits, outages and timeouts use the scoped local assistant, with
+a visible notice and `ai_mode=local` on that response. Document fallback keeps
+the retrieved source passages. Invalid citations, missing required tool calls
+and rejected credentials remain errors. A validated transfer proposal uses
+server-authored consent text and requires a separate confirmation.
+
 `GOOGLE_API_KEY` is accepted as a Gemini alias. Local `OPENAI_API_KEY` is accepted as an alias. Optional model overrides are `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `AEGIS_OPENAI_MODEL` and `OPENROUTER_MODEL`; otherwise the app discovers a supported model where implemented. Gemini uses Google's native `generateContent` function calling and sends credentials in an API-key header, not a URL. OpenRouter uses its OpenAI-compatible chat completions API. Allow `generativelanguage.googleapis.com`, `openrouter.ai`, `api.anthropic.com` and/or `api.openai.com` when running behind restricted egress.
 
 The analyst **Integrations** page shows implemented adapters, effective modes and credential presence without revealing values. Connection buttons check model/catalog access without sending customer data; that does not prove inference succeeds. Supplied keys still need valid account permissions, quota and network access. Do not use credentials pasted into chat or source code; revoke and rotate them immediately.
@@ -65,6 +90,26 @@ bash scripts/deploy-google.sh
 ```
 
 Run the one-time owner setup first, with an enabled `AGIES_SECRET` version and optional `OPENROUTER_API_KEY` in Secret Manager. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the deployment verification record. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
+
+Routine deployments use a **read-only schema check**. For the first rollout to
+an empty database, explicitly set `INITIALIZE_SCHEMA=true`; historical imports
+and schema upgrades require offline maintenance with writers stopped.
+
+## Automatic deployment from main
+
+Push application changes to `main` as usual. **Application checks** runs backend,
+native Firestore, build, security, dependency and browser checks. A successful
+check of the current `main` commit triggers **Deploy Firestore application**,
+which publishes that exact commit and verifies the public app. Failed checks
+leave the existing deployment running. Pull requests and other branches do not
+deploy. Older commits are skipped when a newer `main` push exists.
+
+One-time Google trust setup is in
+[scripts/bootstrap-github-actions.sh](scripts/bootstrap-github-actions.sh).
+It must be run by the project owner; no JSON key or provider token is placed in
+GitHub. Project-specific nonsecret identity defaults are already in the workflow.
+See [CI/CD setup, release status and recovery](docs/CICD.md) for the executed
+status and the owner command.
 
 ## Demo sign-ins
 
@@ -123,9 +168,20 @@ Browser journeys change banking/security state and require a fresh synthetic dat
 
 The self-contained mock workflow is implemented. Real payment/bank APIs, authoritative KYC/liveness/sanctions, real bureau reports, attested device/GeoIP and enrolled production MFA remain separate provider integrations. They require provider accounts, protocols, consent, reconciliation, operational monitoring and regulatory review. An LLM key cannot provide these services.
 
-Local retrieval is lexical rather than learned vector embeddings. Scanned-PDF OCR, multilingual voice and regulatory reporting are future extensions. Savings-goal progress is manually tracked rather than reserved funds. HTTPS, backups/restore drills, privacy/retention controls and real provider validation must be configured for an actual production deployment.
+Local retrieval is lexical rather than learned vector embeddings. Scanned-PDF OCR, multilingual voice and regulatory reporting are future extensions. Savings-goal progress is manually tracked rather than reserved funds. Hosted HTTPS and secrets are configured; backups/restore drills, privacy/retention controls and real provider validation remain production work. See the prioritized [future ideas](docs/ROADMAP.md).
 
-Read [implementation status](docs/IMPLEMENTATION_STATUS.md) for the full delivered/remaining matrix, [operations](docs/OPERATIONS.md) for setup/deployment, [architecture](docs/ARCHITECTURE.md) for trust boundaries, and [API contract](docs/API_CONTRACT.md) for endpoints.
+| Documentation | Contents |
+| --- | --- |
+| [Delivery status](docs/IMPLEMENTATION_STATUS.md) | Completed features, live configuration and remaining limits |
+| [End-to-end flows](docs/END_TO_END.md) | Customer, payment, analyst, identity, documents and agent journeys |
+| [Architecture](docs/ARCHITECTURE.md) | Technologies, persistence, atomicity and trust boundaries |
+| [CI/CD](docs/CICD.md) | Automatic main deployments, one-time trust setup and recovery |
+| [Cloud setup](docs/CLOUD_SETUP.md) | Google identities, hosting, secrets and safe legacy import |
+| [Operations](docs/OPERATIONS.md) | Local setup, maintenance, worker and recovery commands |
+| [API contract](docs/API_CONTRACT.md) | Endpoints, auth, workflow and fallback response fields |
+| [Validation](docs/VALIDATION.md) | Executed checks and live evidence |
+| [Requirements](docs/REQUIREMENTS.md) | Agreed scope and acceptance conditions |
+| [Roadmap](docs/ROADMAP.md) | Prioritized future ideas and production prerequisites |
 
 ```text
 backend/       API, persistence, providers, scoped tools, risk rules and tests

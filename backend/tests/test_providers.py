@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from app.query import func, select
 
 from app import config
-from app.models import Beneficiary, Document, DocumentChunk, LedgerEntry, Transfer
+from app.models import Beneficiary, ChatMessage, Document, DocumentChunk, LedgerEntry, Transfer
 from app.services import intelligence as ai
 from app.services import providers
 from test_intelligence import intelligence_db
@@ -260,8 +260,12 @@ def test_gemini_chat_uses_scoped_tools_and_hides_customer_identifiers(
     assert payloads[0]["tools"][0]["functionDeclarations"]
 
 
+@pytest.mark.parametrize("routed_model,continuation_model", [
+    ("synthetic/banking-model:free", "synthetic/banking-model:free"),
+    ("synthetic/paid-model", "openrouter/free"),
+])
 def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
-    intelligence_db, clean_provider_env, monkeypatch
+    intelligence_db, clean_provider_env, monkeypatch, routed_model, continuation_model
 ):
     db, user, *_ = intelligence_db
     secret = "synthetic-openrouter-key"
@@ -279,6 +283,7 @@ def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
             message = {
                 "role": "assistant",
                 "content": None,
+                "reasoning_details": [{"type": "reasoning.encrypted", "data": "synthetic-opaque-state"}],
                 "tool_calls": [
                     {
                         "id": "call_balance",
@@ -292,7 +297,7 @@ def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
                 "role": "assistant",
                 "content": "Your available balance is INR 20000.00.",
             }
-        return httpx.Response(200, json={"choices": [{"message": message}]})
+        return httpx.Response(200, json={"model": routed_model, "choices": [{"message": message}]})
 
     client_type = httpx.Client
     monkeypatch.setattr(
@@ -319,6 +324,11 @@ def test_openrouter_chat_uses_scoped_tools_and_redacts_customer_identifiers(
     }
     assert payloads[0]["provider"]["require_parameters"] is True
     assert payloads[1]["tool_choice"] == "auto"
+    assert payloads[1]["model"] == continuation_model
+    continuation = payloads[1]["messages"][-2]
+    assert bool(continuation.get("reasoning_details")) == continuation_model.endswith(":free")
+    assert "synthetic-opaque-state" not in str(result)
+    assert all("synthetic-opaque-state" not in row.content for row in db.scalars(select(ChatMessage)))
     sent = json.dumps(payloads)
     assert "synthetic@example.test" not in sent
     assert "123456789012" not in sent

@@ -46,6 +46,11 @@ use ADC or `GOOGLE_APPLICATION_CREDENTIALS` pointing outside the checkout.
 Cloud Run uses its service identity and should never carry a JSON key file.
 Provider keys must not reach the browser environment or source archives.
 
+OpenRouter availability failures use disclosed local scoped answers; invalid
+provider output/credentials remain errors. `/chat` and `/documents/query`
+report the effective `ai_mode` and optional `fallback_from`. Catalog connection
+checks are separate from inference. See API_CONTRACT.md for the response shape.
+
 ## Schema, import and reconciliation
 
 The runtime needs no relational engine. The production image deliberately
@@ -67,6 +72,11 @@ account against its posted ledger and requires global double-entry conservation.
 It backfills unique reservations without overwriting bank documents, then writes
 schema version 2. Hosted startup requires this marker. Reconciliation reports
 mismatches; it never repairs a balance automatically.
+
+An ordinary compatible release runs `python -m app.manage verify-schema`, a
+read-only marker check. It does not rerun offline initialization. The deployment
+script defaults to `INITIALIZE_SCHEMA=false`; the true option is for an initial
+empty target and refuses an existing API service.
 
 Create a non-demo analyst with `python -m app.manage create-analyst --email ...
 --name ...`; the command prompts for a strong password and only stores its hash.
@@ -113,7 +123,14 @@ Use `scripts/bootstrap-google.sh` for owner provisioning and
 checks prerequisites before builds, binds Secret Manager values, schedules the
 worker and verifies the public gateway. It does not create an authorized billing
 association or grant its own missing IAM privileges. Use a maintenance window
-with writers stopped when validating/cutting over existing data.
+with writers stopped for schema initialization or historical cutover. Routine
+compatible releases preserve the current data and use the read-only schema gate.
+
+Pushes to `main` are checked and automatically released by the workflow in
+`.github/workflows/deploy.yml`. The owner must first establish the GitHub
+federation trust using `scripts/bootstrap-github-actions.sh`. Long-lived cloud
+keys and model tokens are not GitHub secrets. See [CI/CD](CICD.md) for the
+owner command, verified commit selection, phase separation and rerun procedure.
 
 Configure Firestore exports/PITR as appropriate, test restoration to an isolated
 target, preserve a separately protected audit archive, and monitor Cloud Run

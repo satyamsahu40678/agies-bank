@@ -10,7 +10,7 @@ Scope comes from the uploaded deck and the attached conversation, including appr
 | Bank core | Persistent integer-paise double-entry ledger; customer/clearing conservation; idempotent payments; no overdrafts; balance rechecks |
 | Governed transfers | Customer confirmation; low-risk settlement, password re-authentication, high-risk holds and analyst decisions |
 | Identity | Bounded ID/selfie uploads, evidence hashes, local validation and synthetic sanctions/risk rules; approve/review/reject with analyst controls |
-| Financial assistant | Scoped tools, balances, spending, budgets, affordability, policy citations and confirmation-required payment proposals |
+| Financial assistant | Scoped tools, balances, spending, budgets, affordability, policy citations, server-authored transfer consent text and disclosed OpenRouter availability fallback |
 | Document intelligence | PDF/text/Markdown/CSV extraction, scoped retrieval, exact source citations, indexed-source preview and optional model-assisted synthesis |
 | Product recommendations | Explainable rule-based loan/term-life estimates and paise-precise EMI calculator; no credit/insurance issuance |
 | Fraud | Amount/z-score/velocity/new-recipient signals, synthetic geo/device/VPN events, calculated impossible-travel speed, alerts, cases and freeze/unfreeze |
@@ -20,7 +20,8 @@ Scope comes from the uploaded deck and the attached conversation, including appr
 | Analyst knowledge | Explicitly confirmed publication of bank policies shared with customers; role checks and audit evidence |
 | Integrations | Gemini/Claude/OpenAI/OpenRouter selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
 | Scheduled workflows | Financial health, security watch, document readiness, savings coaching; customer schedules, durable outbox dispatch, run traces and analyst reconciliation |
-| Operations | Native launcher, cross-platform local launcher, Docker/Firestore emulator, Cloud Run/Firebase deployment tooling, migrations, production guards, secure analyst provisioning and CI workflow |
+| Operations | Native launcher, cross-platform local launcher, Docker/Firestore emulator, Cloud Run/Firebase deployment tooling, safe offline imports, read-only rollout schema gate, production guards and secure analyst provisioning |
+| Delivery | Full CI and automatic deployment of the exact passing current main commit; keyless OIDC owner bootstrap, source labels, serialized releases and hosted smoke checks |
 
 ## What an AI key enables
 
@@ -28,7 +29,7 @@ A Gemini, Anthropic, OpenAI or OpenRouter key enables the implemented model-assi
 
 Model-assisted KYC assesses legibility, person presence and name consistency. It is not legal identity proof, liveness, biometric matching or an authoritative sanctions decision. Stored decisions and tool records are summaries, not hidden chain-of-thought.
 
-OpenRouter was enabled through Secret Manager during the live rollout. Its catalog check and a real `get_balance` tool-call response passed using `openrouter/free`. Other provider protocols remain covered by mocked responses. The analyst connection check verifies catalog access; a successful inference is recorded separately in VALIDATION.md.
+OpenRouter was enabled through Secret Manager during the live rollout. Its catalog check, real `get_balance` tool-call response and grounded policy answers were exercised using `openrouter/free`. Free-route failures also motivated a disclosed local fallback for rate limits, transient outages and timeouts; effective answer mode is returned separately from configured mode. Other provider protocols remain covered by mocked responses. The analyst connection check verifies catalog access; executed inference and deployment outcomes are recorded separately in VALIDATION.md.
 
 ## Explicitly mocked by the user's decision
 
@@ -47,4 +48,7 @@ To operate with real customers and money, provider-specific agreements/APIs, san
 - HTTPS and Secret Manager bindings are configured for the hosted demo. Backups, restore drills, operational alerts, access reviews and privacy/retention controls remain production operational work.
 - Remote GitHub CI, native Firestore verification and live deployment evidence are recorded separately in VALIDATION.md. The hosted demo is available at https://agies-bank.web.app; the local launcher remains available for development.
 
-See VALIDATION.md for executed evidence, OPERATIONS.md for deployment details and API_CONTRACT.md for API behavior.
+See [validation](VALIDATION.md) for executed evidence, [end-to-end flows](END_TO_END.md)
+for the technology map and journeys, [CI/CD](CICD.md) for automatic main delivery,
+[operations](OPERATIONS.md) for maintenance, [API contract](API_CONTRACT.md) for
+responses, and [roadmap](ROADMAP.md) for prioritized future ideas.

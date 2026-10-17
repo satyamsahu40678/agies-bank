@@ -1558,6 +1558,16 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                         "OpenRouter is unavailable or rejected this request. Check the key, selected route and model availability.",
                     )
                 body = response.json()
+                routed_model = body.get("model")
+                if (
+                    model == "openrouter/free"
+                    and isinstance(routed_model, str)
+                    and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,194}:free", routed_model)
+                ):
+                    # A router may choose a different model on every request.
+                    # Keep native tool continuations on the selected free model;
+                    # never promote an unexpected paid ID into a new request.
+                    model = routed_model
                 choice = body.get("choices", [])[0]
                 assistant_message = choice.get("message")
                 if not isinstance(assistant_message, dict):
@@ -1620,11 +1630,16 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                 except (ValueError, TypeError):
                     output = json.dumps({"error": "Tool arguments must contain valid JSON."})
                 tool_messages.append({"role": "tool", "tool_call_id": call_id, "content": output})
-            messages.append({
+            continuation = {
                 "role": "assistant",
                 "content": assistant_message.get("content"),
                 "tool_calls": normalized_calls,
-            })
+            }
+            if model != "openrouter/free" and assistant_message.get("reasoning_details"):
+                # Opaque provider state is transiently returned to the same model
+                # for tool continuity. It is never persisted or sent to the UI.
+                continuation["reasoning_details"] = assistant_message["reasoning_details"]
+            messages.append(continuation)
             messages.extend(tool_messages)
             if proposal:
                 # The scoped tool has validated this review-only proposal. Keep

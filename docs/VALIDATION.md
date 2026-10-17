@@ -6,8 +6,8 @@ not a SQL database disguised as Firestore.
 
 | Check | Executed outcome |
 | --- | --- |
-| Complete backend suite, explicit memory adapter | 152 passed |
-| Complete backend suite, actual Firestore emulator | 152 passed |
+| Complete backend suite, explicit memory adapter | 166 passed |
+| Complete backend suite, actual Firestore emulator | 166 passed |
 | Independent real-HTTP security acceptance on Firestore emulator | 11 passed |
 | Production Next.js build and TypeScript validation | Passed, including Automations and analyst Operations |
 | Chromium browser journeys against production Next.js + Firestore emulator | 16 passed, including mobile navigation, schedules, ledger results, KYC, document citations and analyst controls |
@@ -19,12 +19,14 @@ not a SQL database disguised as Firestore.
 | SQLite export → native Firestore domain → schema initialization → ledger reconciliation | Passed against the emulator, with the source hash unchanged |
 | Live Google Cloud credential and project read | Authenticated to `agies-bank`; default Firestore database exists |
 | Live public rollout and hosted smoke check | Passed at https://agies-bank.web.app: Firestore health, secure cookie forwarding, customer APIs, role isolation and logout |
-| GitHub CI on merged `main` | Passed: [run 38978165811](https://github.com/satyamsahu40678/agies-bank/actions/runs/38978165811) |
+| GitHub CI for Firestore/CD base `1e7f847` on `main` | Passed: [run 39003298928](https://github.com/satyamsahu40678/agies-bank/actions/runs/39003298928), including all 16 browser journeys |
 | Cloud Scheduler → authenticated Cloud Run job → due workflow | Passed: document readiness review completed with scoped tools; test schedule paused afterward |
-| Initial hosted browser suite | 12 passed; three cases identified a queued-review UI block and two OpenRouter response-contract failures; corrections and focused retest in progress |
+| Hosted browser coverage | Initial suite: 12 passed. Focused financial-review and shared-policy journeys passed after correction; final assistant continuation retest follows the current rollout |
 | Cloud Build API and web Docker images | Both built and deployed successfully |
 | Local Docker Compose execution | Not run: no local Docker engine available |
-| Live model inference | OpenRouter `openrouter/free` catalog access and a real `get_balance` tool response passed; document and assistant contract corrections are being retested |
+| Live model inference | Real balance and grounded policy responses passed. Runtime diagnostics reproduced the free router switching models mid-tool-loop and an upstream HTTP400; continuations now stay on the first selected free model |
+| Main deployment workflow validation | Official hash-verified actionlint passed; first automatic release passed exact-source and keyless Google-authentication gates and started Cloud Build |
+| Routine rollout schema gate | Compatible schema verified without writes; absent/older/future markers rejected in memory and native Firestore tests |
 
 One existing Starlette/httpx deprecation warning remains. The isolated developer
 venv initially carried stale dependency metadata; a fresh production-lock
@@ -45,6 +47,8 @@ append-only ledger/audit enforcement, required references, signed integer fields
 goal date round trips, schema initialization, and complete financial totals beyond
 history sampling caps. Legacy rows are read through the new domain repository
 and reconcile after import; the SQLite bytes remain unchanged.
+
+Native OpenRouter tool-call fixtures confirm that validated transfer proposals use server-authored consent text, ignore false model settlement claims and stale source references, and leave balances/ledger entries unchanged. Availability tests cover rate limits, outages, timeouts and the 40-second tool-loop budget; responses disclose scoped local fallback. Credential/configuration failures and invalid citations still reject. Continuation tests retain the selected free model, never request an unexpected paid ID, and prove opaque provider state is absent from persisted chat and client responses.
 
 Worker tests cover atomic event outbox creation, competing claims and schedule
 dispatchers, per-customer exclusion, crash/lease recovery, fencing old workers,
@@ -82,4 +86,4 @@ fresh synthetic demo rather than an import of the unavailable historical SQLite
 file. The public gateway and scoped balance inference passed. The initial hosted
 browser run also exposed conditions that the local polling-worker fixture did
 not reproduce. CI now disables that worker for browser tests, matching hosted
-mode, and the affected flows are being retested after the correction.
+mode. The queued-review and shared-policy focused hosted checks passed. Final assistant and automatic release results will be recorded after the current main rollout.

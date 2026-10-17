@@ -23,7 +23,10 @@ Owner setup completed for project `agies-bank`: the required APIs, distinct
 runtime/build/scheduler identities, and enabled `AGIES_SECRET` and
 `OPENROUTER_API_KEY` versions were verified. The runtime successfully loaded the
 secrets without exposing their values. A real OpenRouter `openrouter/free`
-request called the scoped balance tool and returned an answer from Firestore.
+request called the scoped balance tool and returned an answer from Firestore;
+grounded policy inference was also exercised. Rate limits, transient outages
+and timeouts use a visibly disclosed local assistant response. Protocol and
+citation validation remain enforced. Executed outcomes are in VALIDATION.md.
 
 The `(default)` Firestore Native database is in `nam5`. Schema version 2 was
 initialized on the previously empty target, and demo startup created synthetic
@@ -83,12 +86,18 @@ bash scripts/deploy-google.sh
 ```
 
 The script checks prerequisites before any build or database write, builds the
-API image, runs an idempotent schema/uniqueness/reconciliation job, deploys the
+API image, runs a read-only schema compatibility check, deploys the
 API and web services with explicit container ports, deploys a finite worker job,
 creates a five-minute Cloud Scheduler trigger, publishes Hosting/rules/index
 configuration, and checks the hosted app. The demo smoke check verifies secure
 cookies, authenticated APIs, role boundaries and logout through Firebase.
 It prints a verified public URL only after those checks pass.
+
+For the **first rollout to an empty, offline target**, set
+`INITIALIZE_SCHEMA=true` explicitly. This initializes uniqueness reservations and
+reconciles the source before schema version 2 is written. The option refuses an
+existing API service. Ordinary updates and automatic CI/CD keep this option
+false and never reinitialize live application data.
 
 `DEPLOY_MODE=demo` enables intentionally public synthetic customer/analyst demo
 accounts while keeping HTTPS cookies and a strong secret mandatory. Use
@@ -130,9 +139,11 @@ The equivalent schema/reconciliation commands are:
 .venv/bin/python -m app.manage reconcile
 ```
 
-Schema initialization is an offline maintenance operation. Deployments to an
-existing application require a maintenance window with writers stopped; the
-script does not silently stop an existing service or overwrite financial data.
+Schema initialization/import is an offline maintenance operation with writers
+stopped. Ordinary compatible application deployments read the schema marker and
+can run without that offline initialization. The script does not silently stop
+writers, repair balances or overwrite financial data. `app.manage verify-schema`
+is the equivalent read-only compatibility command.
 
 ## Durable workers and CI
 
@@ -146,12 +157,15 @@ polling thread in hosted services.
 
 `.github/workflows/ci.yml` runs both the isolated backend suite and the complete
 suite against the actual Firestore emulator, builds Next.js, and runs independent
-HTTP and browser journeys. `.github/workflows/deploy.yml` is a manual deployment
-workflow restricted to this branch. Configure the `google-cloud` GitHub
-environment with Workload Identity Federation variables
-`GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT`. Restrict the
-Google federation binding to this repository/environment. The workflow does not
-embed a service-account JSON or run automatically on pull requests.
+HTTP and browser journeys. `.github/workflows/deploy.yml` automatically deploys
+the exact current `main` commit after successful push CI, and supports verified
+manual dispatch. The project owner runs `scripts/bootstrap-github-actions.sh`
+once to establish keyless identity. Workflow defaults already contain this
+project's nonsecret provider/account IDs; `GCP_WORKLOAD_IDENTITY_PROVIDER` and
+`GCP_DEPLOY_SERVICE_ACCOUNT` variables are optional overrides. The federation
+condition pins repository/owner numeric IDs, main and the deployment workflow.
+No JSON key is committed. Pull requests and other branches do not deploy. See
+[CI/CD](CICD.md) for setup, trigger behavior and recovery.
 
 ## Verify and remove the prototype
 
