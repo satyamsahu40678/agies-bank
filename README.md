@@ -6,15 +6,15 @@ Open the [hosted demo](https://agies-bank.web.app) and choose **Customer demo** 
 
 ## Technology and end-to-end flow
 
-| Layer | Technology and responsibility |
-| --- | --- |
-| Web | Next.js 15, React 19, TypeScript, responsive customer and analyst workspaces |
-| API | Python 3.12, FastAPI, Argon2 passwords, opaque server sessions and CSRF |
-| Storage | Firestore Native; atomic ledger, transfer, audit and durable-job commits |
+| Layer         | Technology and responsibility                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Web           | Next.js 15, React 19, TypeScript, responsive customer and analyst workspaces                                        |
+| API           | Python 3.12, FastAPI, Argon2 passwords, opaque server sessions and CSRF                                             |
+| Storage       | Firestore Native; atomic ledger, transfer, audit and durable-job commits                                            |
 | Agents and AI | Scoped specialist tools, four scheduled reviews, hosted Gemini 3.1 Flash-Lite and optional OpenRouter/Claude/OpenAI |
-| Documents | pypdf/text extraction, tenant-scoped lexical retrieval and checked citations |
-| Hosting | Firebase Hosting → Cloud Run web/API; Cloud Scheduler → finite worker job |
-| Delivery | GitHub Actions checks, keyless Google identity, Cloud Build and Artifact Registry |
+| Documents     | pypdf/text extraction, tenant-scoped lexical retrieval and checked citations                                        |
+| Hosting       | Firebase Hosting → Cloud Run web/API; Cloud Scheduler → finite worker job                                           |
+| Delivery      | GitHub Actions checks, keyless Google identity, Cloud Build and Artifact Registry                                   |
 
 The customer signs in, reads a Firestore-backed overview, manages budgets/goals,
 queries documents and reviews assistant proposals. A confirmed transfer passes
@@ -120,10 +120,10 @@ status and the owner command.
 
 ## Demo sign-ins
 
-| Role | Email | Password |
-| --- | --- | --- |
-| Customer | `customer@aegis.demo` | `AegisDemo!2026` |
-| Analyst | `analyst@aegis.demo` | `AegisAnalyst!2026` |
+| Role     | Email                 | Password            |
+| -------- | --------------------- | ------------------- |
+| Customer | `customer@aegis.demo` | `AegisDemo!2026`    |
+| Analyst  | `analyst@aegis.demo`  | `AegisAnalyst!2026` |
 
 These credentials are intentionally public synthetic demo credentials. Production startup rejects a database containing them. Newly registered customers start with zero balance, and public registration cannot grant the analyst role.
 
@@ -178,18 +178,18 @@ The self-contained mock workflow is implemented. Real payment/bank APIs, authori
 
 Local retrieval is lexical rather than learned vector embeddings. Scanned-PDF OCR, multilingual voice and regulatory reporting are future extensions. Savings-goal progress is manually tracked rather than reserved funds. Hosted HTTPS and secrets are configured; backups/restore drills, privacy/retention controls and real provider validation remain production work. See the prioritized [future ideas](docs/ROADMAP.md).
 
-| Documentation | Contents |
-| --- | --- |
-| [Delivery status](docs/IMPLEMENTATION_STATUS.md) | Completed features, live configuration and remaining limits |
-| [End-to-end flows](docs/END_TO_END.md) | Customer, payment, analyst, identity, documents and agent journeys |
-| [Architecture](docs/ARCHITECTURE.md) | Technologies, persistence, atomicity and trust boundaries |
-| [CI/CD](docs/CICD.md) | Automatic main deployments, one-time trust setup and recovery |
-| [Cloud setup](docs/CLOUD_SETUP.md) | Google identities, hosting, secrets and safe legacy import |
-| [Operations](docs/OPERATIONS.md) | Local setup, maintenance, worker and recovery commands |
-| [API contract](docs/API_CONTRACT.md) | Endpoints, auth, workflow and fallback response fields |
-| [Validation](docs/VALIDATION.md) | Executed checks and live evidence |
-| [Requirements](docs/REQUIREMENTS.md) | Agreed scope and acceptance conditions |
-| [Roadmap](docs/ROADMAP.md) | Prioritized future ideas and production prerequisites |
+| Documentation                                    | Contents                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------ |
+| [Delivery status](docs/IMPLEMENTATION_STATUS.md) | Completed features, live configuration and remaining limits        |
+| [End-to-end flows](docs/END_TO_END.md)           | Customer, payment, analyst, identity, documents and agent journeys |
+| [Architecture](docs/ARCHITECTURE.md)             | Technologies, persistence, atomicity and trust boundaries          |
+| [CI/CD](docs/CICD.md)                            | Automatic main deployments, one-time trust setup and recovery      |
+| [Cloud setup](docs/CLOUD_SETUP.md)               | Google identities, hosting, secrets and safe legacy import         |
+| [Operations](docs/OPERATIONS.md)                 | Local setup, maintenance, worker and recovery commands             |
+| [API contract](docs/API_CONTRACT.md)             | Endpoints, auth, workflow and fallback response fields             |
+| [Validation](docs/VALIDATION.md)                 | Executed checks and live evidence                                  |
+| [Requirements](docs/REQUIREMENTS.md)             | Agreed scope and acceptance conditions                             |
+| [Roadmap](docs/ROADMAP.md)                       | Prioritized future ideas and production prerequisites              |
 
 ```text
 backend/       API, persistence, providers, scoped tools, risk rules and tests
@@ -199,3 +199,5 @@ scripts/       Locked setup, local startup, validation and Docker build helpers
 examples/      Synthetic identity and policy upload samples
 docs/          Requirements, implementation status, contracts and evidence
 ```
+
+`Note: Note: There is a typo in the backend name, which shows  AgiesBank isntead of AegisBank.`
