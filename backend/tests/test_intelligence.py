@@ -282,7 +282,7 @@ def test_orchestrator_calls_five_specialists_and_emits_shared_trace(intelligence
     logs = db.scalars(
         select(AuditLog).where(AuditLog.trace_id == result["trace_id"])
     ).all()
-    assert set(ai.AGENTS).issubset({log.agent for log in logs})
+    assert {"banking_agent", "fraud_agent", "identity_agent", "document_agent", "recommendation_agent"}.issubset({log.agent for log in logs})
     assert all("thought" not in log.summary.lower() for log in logs)
     assert db.scalar(select(func.count()).select_from(ChatMessage)) == 2
 

@@ -35,3 +35,5 @@ Backend integration tests cover authentication and authorization, tenant isolati
 - Firestore-only hosted runtime, all further work on `main`, Firebase Hosting/Cloud Run deployment, enabled Secret Manager versions and durable scheduled workers.
 - Pushes to `main` run the complete checks and automatically deploy the exact passing current commit using GitHub OIDC; other branches and pull requests do not deploy. Routine delivery never runs the offline importer or initializes live data.
 - Free OpenRouter availability failures must keep scoped banking guidance usable through a disclosed local fallback; provider validation and financial consent stay enforced.
+- Contextual Ask AI throughout the customer workspace, editable goal drafts with explicit retry-safe saving, cash-flow and recurring-expense analysis, combined savings capacity and two additional durable specialists.
+- Six attributed educational banking summaries from primary Indian sources, searchable reading, exact-summary citations, official links and review dates. Keep real-source education distinct from synthetic bank products.

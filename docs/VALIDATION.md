@@ -4,6 +4,30 @@ Verification uses synthetic records, local provider fixtures and live provider c
 The authoritative-storage tests use the actual official Firestore emulator,
 not a SQL database disguised as Firestore.
 
+## Contextual AI and banking knowledge — 2026-10-17
+
+- Complete backend suite with the explicit memory adapter: **193 passed**.
+- Complete backend suite against the official native Firestore emulator:
+  **193 passed**.
+- Production Next.js build and TypeScript validation: passed, including the new
+  Money analysis and Banking guides pages.
+- Production-local Chromium suite: **20 passed**, including all existing banking
+  journeys and three new contextual AI/goal/analysis/primary-source journeys.
+- New backend coverage checks complete posted windows, excludes foreign,
+  pending and future entries, verifies negative estimates remain planning only,
+  compares combined goal capacity, validates recurring patterns, tests role,
+  scope and CSRF restrictions, and checks retry-safe explicit goal saving.
+- A native Gemini fixture exercises the new goal capability and preserves opaque
+  tool continuation without exposing it. It creates no goal or financial write.
+- Six educational summaries link to primary RBI, DICGC, NPCI and Government of
+  India publications, reviewed on 2026-10-17. Exact excerpts, source metadata and
+  inaccessible-document handling are covered.
+
+The new analysis is deterministic; local browser tests use local AI and synthetic
+records. These results do not claim a live-model evaluation. The exact published
+release is separately checked by the automatic main pipeline.
+Implementation details and limitations are in [AI workspace](AI_WORKSPACE.md).
+
 ## Customer workspace and Markdown — 2026-10-17
 
 - TypeScript and the production Next.js build passed; npm audit reports zero

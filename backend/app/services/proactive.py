@@ -195,8 +195,19 @@ def _validated_goal(payload, current=None):
     }
 
 
-def create_goal(db, user, payload):
+def create_goal(db, user, payload, *, idempotency_key=None):
     _customer(user)
+    values = _validated_goal(payload)
+    goal_id = None
+    if idempotency_key is not None:
+        if not isinstance(idempotency_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,100}", idempotency_key):
+            raise HTTPException(422, "Provide a valid goal request key.")
+        goal_id = hashlib.sha256((user.id + ":goal:" + idempotency_key).encode()).hexdigest()[:32]
+        existing = db.get(SavingsGoal, goal_id)
+        if existing:
+            if existing.user_id != user.id or any(getattr(existing, key) != value for key, value in values.items()):
+                raise HTTPException(409, "This goal request key has already been used with different details.")
+            return goal_json(existing)
     if (
         db.scalar(
             select(func.count())
@@ -206,7 +217,7 @@ def create_goal(db, user, payload):
         >= 100
     ):
         raise HTTPException(409, "A maximum of 100 savings goals is supported.")
-    goal = SavingsGoal(user_id=user.id, **_validated_goal(payload))
+    goal = SavingsGoal(user_id=user.id, **values, **({"id": goal_id} if goal_id else {}))
     db.add(goal)
     db.flush()
     audit(
@@ -495,7 +506,7 @@ def list_insights(db, user):
 def _eligible(now):
     return and_(
         AgentRun.kind.in_(
-            ["financial_health", "security_review", "document_review", "savings_coach"]
+            ["financial_health", "security_review", "document_review", "savings_coach", "cashflow_review", "expense_review"]
         ),
         AgentRun.attempts < AgentRun.max_attempts,
         or_(

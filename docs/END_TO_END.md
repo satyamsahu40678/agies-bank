@@ -111,6 +111,8 @@ funds. Open Automations and enable a review with an interval of 1–168 hours.
 | Security watch | Account status, stored suspicious events, alerts and held-transfer guidance |
 | Document readiness | Indexed document coverage, identity readiness and missing-document guidance |
 | Savings coaching | Goal progress, dates and contribution planning |
+| Cash-flow analyst | 30/60/90-day estimates and combined goal feasibility |
+| Expense detective | Possible weekly/monthly expense patterns from posted debits |
 
 Cloud Scheduler invokes the finite worker every five minutes. Due-time
 advancement and job creation are atomic. A worker claims a lease/fencing token,
@@ -118,7 +120,27 @@ runs scoped tools, then commits outputs and completion together. Expired leases
 recover, attempts are bounded and per-customer exclusion prevents overlap.
 Manual Run/Refresh wakes queued work without waiting for the next scheduled tick.
 Pause stops future dispatches; an already queued job can finish. Inspect the
-customer run trace and analyst Operations for completion and reconciliation.
+customer review summaries and analyst Operations for completion and reconciliation.
+
+## Contextual AI, goal drafts and banking guides
+
+Sign in as a customer and choose **Ask AI** on a workspace page. Select a suggested
+question to execute it immediately, or enter your own. The model reads current
+scoped data and explains calculated results in Markdown. Opening the panel makes
+no inference request. Conversation text is saved in the full assistant history.
+
+For a goal, ask **Create a goal for Emergency fund of INR 60000 in 12 months**.
+Inspect the monthly estimate and shortfall, choose **Review goal draft**, edit
+the fields, then **Save this goal**. The separate CSRF-protected save request uses
+a stable draft key for retries. Until that save, no goal exists. Account balances
+and the ledger remain unchanged throughout this planning flow.
+
+Open **Money analysis** to compare estimates, recurring-payment patterns and all
+active goals against the same monthly capacity. Each section has an AI explanation
+button. Open **Banking guides** for six searchable educational summaries, select
+**Read guide**, follow the official source, or choose **Explain with AI** for a
+cited answer. The guides are real-source education; the bank records remain
+synthetic. Details and limits are in [AI workspace](AI_WORKSPACE.md).
 
 ## From code change to the hosted application
 

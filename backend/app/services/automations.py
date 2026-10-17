@@ -2,6 +2,7 @@
 
 import time
 from datetime import timedelta
+from decimal import Decimal
 
 from fastapi import HTTPException
 
@@ -19,6 +20,18 @@ from ..query import ConcurrentWrite, select
 from .common import audit
 
 CATALOG = [
+    {
+        "kind": "cashflow_review",
+        "name": "Cash-flow analyst",
+        "description": "Estimate your cash-flow outlook and compare all goals against the same savings capacity.",
+        "tools": ["get_cashflow_forecast", "get_goal_plan"],
+    },
+    {
+        "kind": "expense_review",
+        "name": "Expense detective",
+        "description": "Look for possible weekly or monthly recurring expenses in posted transactions.",
+        "tools": ["get_recurring_expenses"],
+    },
     {
         "kind": "financial_health",
         "name": "Financial health review",
@@ -157,6 +170,30 @@ def dispatch_due(factory=SessionLocal, *, max_schedules=100):
 
 def build_plan(db, user, run):
     from .proactive import TOOLS, _health_plan, _insight
+
+    if run.kind in {"cashflow_review", "expense_review"}:
+        from .intelligence import REGISTRY, ToolContext
+        from .common import paise
+
+        context = ToolContext(db, user, run.trace_id, frozenset({"ledger:read", "goals:read"}))
+        names = ["get_cashflow_forecast", "get_goal_plan"] if run.kind == "cashflow_review" else ["get_recurring_expenses"]
+        values = {name: REGISTRY.invoke(name, context, {}) for name in names}
+        for name in names:
+            audit(db, user.id, REGISTRY.agent_for(name), "proactive_tool_completed", "Reviewed customer planning information without changing any financial record.", [name], trace_id=run.trace_id)
+        if run.kind == "cashflow_review":
+            flow, goals = values[names[0]], values[names[1]]
+            shortfall = paise(goals["monthly_shortfall"], allow_zero=True)
+            summary = {"monthly_capacity": flow["monthly_capacity"], "monthly_goal_shortfall": goals["monthly_shortfall"], "estimated_balance_30_days": flow["projections"][0]["estimated_balance"], "read_only": True}
+            message = f"Repeating the last 30 days gives an estimated balance of INR {summary['estimated_balance_30_days']} in 30 days. Active goals need INR {goals['combined_monthly_contribution']} monthly; recorded monthly capacity is INR {flow['monthly_capacity']}. Shortfall: INR {goals['monthly_shortfall']}. Estimates exclude unrecorded future changes."
+            title = "Your cash-flow outlook"
+            severity = "warning" if shortfall or Decimal(flow["projections"][0]["estimated_balance"]) < 0 else "info"
+        else:
+            expenses = values[names[0]]
+            summary = {"possible_patterns": len(expenses["patterns"]), "estimated_monthly_total": expenses["estimated_monthly_total"], "read_only": True}
+            message = f"Found {summary['possible_patterns']} possible recurring expense patterns, estimated at INR {summary['estimated_monthly_total']} monthly. Patterns require at least three payment dates and are not confirmed bills or subscriptions. Review them before changing any payment."
+            title, severity = "Your recurring expense review", "info"
+        proposal = _insight(run.kind, "latest", severity, title, message, "Explore analysis", "/analysis", summary)
+        return summary, [proposal], names
 
     if run.kind == "savings_coach":
         summary, proposals = _health_plan(db, user, run)

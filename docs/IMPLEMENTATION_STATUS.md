@@ -10,16 +10,18 @@ Scope comes from the uploaded deck and the attached conversation, including appr
 | Bank core | Persistent integer-paise double-entry ledger; customer/clearing conservation; idempotent payments; no overdrafts; balance rechecks |
 | Governed transfers | Customer confirmation; low-risk settlement, password re-authentication, high-risk holds and analyst decisions |
 | Identity | Bounded ID/selfie uploads, evidence hashes, local validation and synthetic sanctions/risk rules; approve/review/reject with analyst controls |
-| Financial assistant | Scoped tools, balances, spending, budgets, affordability, policy citations, server-authored transfer consent text and disclosed OpenRouter fallback |
+| Financial assistant | Page-wide Ask AI, nine named specialists, scoped tools, safe Markdown, balances, spending, budgets, affordability, citations and explicit financial consent |
+| Money analysis | Complete-window cash-flow estimates, recurring-expense patterns and combined goal feasibility with stated assumptions |
+| Banking knowledge | Six searchable educational summaries from RBI, DICGC, NPCI and Government of India, with exact-summary citations and source links |
 | Document intelligence | PDF/text/Markdown/CSV extraction, scoped retrieval, exact source citations, indexed-source preview and optional model-assisted synthesis |
 | Product recommendations | Explainable rule-based loan/term-life estimates and paise-precise EMI calculator; no credit/insurance issuance |
 | Fraud | Amount/z-score/velocity/new-recipient signals, synthetic geo/device/VPN events, calculated impossible-travel speed, alerts, cases and freeze/unfreeze |
 | Proactive agents | Durable event queue, atomically claimed leases, bounded retries, crash recovery, scoped tools, decision summaries and complete run status |
 | Financial health | Posted-ledger cash flow, budget warnings, subscription observations, safe guidance and dismissible insights |
-| Savings goals | Create/edit/pause/remove manual planning goals, progress and monthly contribution estimates; goal changes never move money |
+| Savings goals | AI draft → editable review → retry-safe explicit save; create/edit/pause/remove plans and monthly estimates; no money movement |
 | Analyst knowledge | Explicitly confirmed publication of bank policies shared with customers; role checks and audit evidence |
 | Integrations | Gemini/Claude/OpenAI/OpenRouter selection, automatic activation from supplied keys, read-only model-access checks, Firestore alert projection and truthful adapter status |
-| Scheduled workflows | Financial health, security watch, document readiness, savings coaching; customer schedules, durable outbox dispatch, run traces and analyst reconciliation |
+| Scheduled workflows | Six reviews: financial health, security watch, document readiness, savings coaching, cash-flow analyst and expense detective; durable dispatch and customer controls |
 | Operations | Native launcher, cross-platform local launcher, Docker/Firestore emulator, Cloud Run/Firebase deployment tooling, safe offline imports, read-only rollout schema gate, production guards and secure analyst provisioning |
 | Delivery | Full CI and automatic deployment of the exact passing current main commit; keyless OIDC owner bootstrap, source labels, serialized releases and hosted smoke checks |
 

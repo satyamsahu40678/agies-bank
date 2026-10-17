@@ -96,11 +96,18 @@ background task. A crash leaves a leased job recoverable; an expired fencing
 token cannot commit its output. Automatic attempts stop after three by default;
 customers may request up to three explicit retry cycles for a failed review.
 
-The customer Automations page controls four review types. Pausing a schedule
+The customer Automations page controls six review types, including Cash-flow
+analyst and Expense detective. Their calculations do not call a model; customer
+AI explanations use the configured provider quota. Pausing a schedule
 prevents future dispatches; a job already queued continues. Removing a schedule
 does not erase its prior run or audit history. The analyst Operations page shows
 reconciliation, job counts and expired leases. Operational checks themselves do
 not move funds.
+
+Banking education summaries are release-versioned in `services/knowledge.py`.
+Review the official links and update their review date with content changes; no
+runtime scraper or Firestore seed job is needed. No new secret or schema migration
+is required for the contextual AI expansion. See [AI workspace](AI_WORKSPACE.md).
 
 ## Validation
 

@@ -4,6 +4,15 @@ A runnable, governed agentic banking application with customer and analyst works
 
 Open the [hosted demo](https://agies-bank.web.app) and choose **Customer demo** or **Analyst demo**. Deployment and further changes use `main`.
 
+Choose **Ask AI** from any customer workspace page for contextual help. Explore
+**Money analysis** for cash-flow estimates, possible recurring expenses and
+combined goal feasibility. Ask the savings coach to draft a goal, edit it, then
+save it explicitly. **Banking guides** contains six educational summaries with
+official RBI, DICGC, NPCI and Government of India source links. The new cash-flow
+and expense specialists can also run on customer-controlled schedules.
+See the [AI workspace guide](docs/AI_WORKSPACE.md) for examples, calculation
+assumptions, source maintenance and consent boundaries.
+
 ## Technology and end-to-end flow
 
 | Layer         | Technology and responsibility                                                                                       |
@@ -11,8 +20,8 @@ Open the [hosted demo](https://agies-bank.web.app) and choose **Customer demo** 
 | Web           | Next.js 15, React 19, TypeScript, responsive customer and analyst workspaces                                        |
 | API           | Python 3.12, FastAPI, Argon2 passwords, opaque server sessions and CSRF                                             |
 | Storage       | Firestore Native; atomic ledger, transfer, audit and durable-job commits                                            |
-| Agents and AI | Scoped specialist tools, four scheduled reviews, hosted Gemini 3.1 Flash-Lite and optional OpenRouter/Claude/OpenAI |
-| Documents     | pypdf/text extraction, tenant-scoped lexical retrieval and checked citations                                        |
+| Agents and AI | Contextual Ask AI, goal drafts, cash-flow/expense specialists, six scheduled reviews, hosted Gemini 3.1 Flash-Lite and optional OpenRouter/Claude/OpenAI |
+| Documents     | pypdf/text extraction, six source-linked banking guides, tenant-scoped lexical retrieval and checked citations                                        |
 | Hosting       | Firebase Hosting → Cloud Run web/API; Cloud Scheduler → finite worker job                                           |
 | Delivery      | GitHub Actions checks, keyless Google identity, Cloud Build and Artifact Registry                                   |
 
@@ -96,7 +105,7 @@ export DEPLOY_MODE=demo
 bash scripts/deploy-google.sh
 ```
 
-Run the one-time owner setup first, with an enabled `AGIES_SECRET` version and optional `OPENROUTER_API_KEY` in Secret Manager. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the deployment verification record. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
+Run the one-time owner setup first, with enabled `AGIES_SECRET` and `GEMINI_API_KEY` versions in Secret Manager for the hosted Gemini configuration. The script verifies the hosted demo before reporting a public URL. See [cloud setup](docs/CLOUD_SETUP.md) for identities, exact commands, offline SQLite import and the deployment verification record. The previous 99-row SQLite file is not in this checkout and has not been imported into the live project.
 
 Routine deployments use a **read-only schema check**. For the first rollout to
 an empty database, explicitly set `INITIALIZE_SCHEMA=true`; historical imports
@@ -181,6 +190,7 @@ Local retrieval is lexical rather than learned vector embeddings. Scanned-PDF OC
 | Documentation                                    | Contents                                                           |
 | ------------------------------------------------ | ------------------------------------------------------------------ |
 | [Delivery status](docs/IMPLEMENTATION_STATUS.md) | Completed features, live configuration and remaining limits        |
+| [AI workspace](docs/AI_WORKSPACE.md) | Contextual help, goal drafts, analysis specialists, banking sources and limits |
 | [End-to-end flows](docs/END_TO_END.md)           | Customer, payment, analyst, identity, documents and agent journeys |
 | [Architecture](docs/ARCHITECTURE.md)             | Technologies, persistence, atomicity and trust boundaries          |
 | [CI/CD](docs/CICD.md)                            | Automatic main deployments, one-time trust setup and recovery      |

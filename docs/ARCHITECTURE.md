@@ -67,11 +67,20 @@ a stale token or expired lease cannot publish completion. Failed executions roll
 back output and retry with bounded backoff. Expired final attempts become failed.
 
 Customers can enable, pause and run financial health, security review, document
-readiness and savings coaching schedules. A schedule's due timestamp and its
+readiness, savings coaching, cash-flow analysis and recurring-expense schedules.
+A schedule's due timestamp and its
 outbox job advance together; competing dispatchers cannot queue it twice. Each
 workflow reads only its customer's records, emits guidance and records tools and
 decision summaries. It cannot settle payments, modify a budget or approve KYC.
 Savings progress remains a planning record, not reserved bank funds.
+
+The shared customer Ask AI panel and full conversation use the same scoped
+registry. New analysis capabilities compute complete posted-ledger windows before
+the model explains them. Goal proposals return server-validated draft cards;
+only a separate customer-confirmed `/goals` request writes a plan. Six versioned
+banking summaries ship with primary-source metadata, without writing to the live
+document collection. See [AI workspace](AI_WORKSPACE.md) for detailed assumptions,
+source maintenance and confirmation behavior.
 
 Cloud Scheduler invokes a finite worker job every five minutes with a service
 identity. This supplies recovery independently of API CPU allocation or scale to

@@ -1525,12 +1525,33 @@ def savings_goals(user=Depends(customer), db=Depends(get_db)):
 
 
 @app.post("/api/goals", status_code=201)
-def add_savings_goal(payload: GoalInput, user=Depends(customer), db=Depends(get_db)):
+def add_savings_goal(payload: GoalInput, request: Request, user=Depends(customer), db=Depends(get_db)):
     from .services.proactive import create_goal
 
-    result = create_goal(db, user, payload.model_dump())
+    result = create_goal(db, user, payload.model_dump(), idempotency_key=request.headers.get("Idempotency-Key"))
     db.commit()
     return result
+
+
+@app.get("/api/knowledge")
+def banking_knowledge(user=Depends(customer)):
+    from .services.knowledge import list_guides
+
+    return list_guides()
+
+
+@app.get("/api/knowledge/{guide_id}")
+def banking_guide(guide_id: str, user=Depends(customer)):
+    from .services.knowledge import get_guide
+
+    return get_guide(guide_id)
+
+
+@app.get("/api/analysis")
+def customer_analysis(user=Depends(customer), db=Depends(get_db)):
+    from .services.analysis import overview
+
+    return overview(db, user)
 
 
 @app.patch("/api/goals/{goal_id}")
@@ -1689,6 +1710,14 @@ async def publish_bank_policy(
 def source_document_content(
     document_id: str, user=Depends(customer), db=Depends(get_db)
 ):
+    if document_id.startswith("guide-"):
+        from .services.knowledge import get_guide
+
+        guide = get_guide(document_id)
+        return {
+            "document": {"id": guide["id"], "title": guide["title"], "kind": "banking_guide", "filename": guide["id"] + ".md", "chunk_count": 1, "created_at": guide["reviewed_at"] + "T00:00:00Z", "source_url": guide["source_url"], "publisher": guide["publisher"]},
+            "pages": [{"page": 1, "text": guide["content"]}],
+        }
     doc = db.scalar(
         select(Document).where(
             Document.id == document_id,

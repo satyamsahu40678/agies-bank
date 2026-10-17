@@ -22,6 +22,8 @@ import { api, dateTime, money, useResource } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { customerAgentName } from "@/lib/customer-labels";
+import type { GoalDraft } from "@/lib/ai";
+import { GoalDraftCard } from "@/components/goal-draft-card";
 import {
   Button,
   Card,
@@ -37,6 +39,9 @@ type Citation = {
   title: string;
   excerpt: string;
   page: number;
+  source_url?: string;
+  publisher?: string;
+  reviewed_at?: string;
 };
 type Proposal = {
   beneficiary_id: string;
@@ -49,6 +54,7 @@ type Response = {
   tools: { name: string; summary: string }[];
   citations: Citation[];
   proposal?: Proposal;
+  goal_drafts?: GoalDraft[];
   trace_id: string;
 };
 type Message = {
@@ -82,13 +88,13 @@ const prompts = [
   },
   {
     icon: CreditCard,
-    title: "Plan your next step",
-    text: "Which loans and insurance plans am I eligible for?",
+    title: "Plan a savings goal",
+    text: "Create a goal for Emergency fund of INR 60000 in 12 months.",
   },
   {
     icon: BookOpen,
-    title: "Find a clear answer",
-    text: "What does the loan policy say about prepayment?",
+    title: "Look ahead with confidence",
+    text: "Forecast my cash flow and find possible recurring expenses.",
   },
 ];
 export default function Assistant() {
@@ -324,14 +330,15 @@ export default function Assistant() {
                               <ChevronDown size={12} />
                             </summary>
                             <blockquote>{citation.excerpt}</blockquote>
-                            <Link href="/documents">
+                            {citation.source_url ? <a href={citation.source_url} target="_blank" rel="noopener noreferrer">{citation.publisher} · reviewed {citation.reviewed_at} <ArrowUpRight size={11} /></a> : <Link href="/documents">
                               Open document workspace
                               <ArrowUpRight size={11} />
-                            </Link>
+                            </Link>}
                           </details>
                         ))}
                       </div>
                     ) : null}
+                    {message.result?.goal_drafts?.map(draft => <GoalDraftCard key={draft.id} draft={draft} />)}
                     {message.result?.proposal && (
                       <div className="chat-proposal">
                         <div className="row-between">
@@ -484,6 +491,26 @@ export default function Assistant() {
                 {
                   name: "Document guide",
                   text: "Clear answers from your documents",
+                  icon: BookOpen,
+                },
+                {
+                  name: "Savings coach",
+                  text: "Draft goals and balance your monthly plan",
+                  icon: Sparkles,
+                },
+                {
+                  name: "Cash-flow analyst",
+                  text: "Explore estimated balances and assumptions",
+                  icon: Wallet,
+                },
+                {
+                  name: "Expense detective",
+                  text: "Spot possible recurring payments",
+                  icon: CreditCard,
+                },
+                {
+                  name: "Banking guide",
+                  text: "Understand RBI, DICGC and NPCI sources",
                   icon: BookOpen,
                 },
                 {

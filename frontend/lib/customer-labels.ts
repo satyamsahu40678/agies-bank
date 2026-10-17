@@ -10,6 +10,9 @@ const agentNames: Record<string, string> = {
   recommendations_agent: "Money coach",
   financial_health_agent: "Money coach",
   savings_agent: "Savings coach",
+  cashflow_agent: "Cash-flow analyst",
+  expense_agent: "Expense detective",
+  education_agent: "Banking guide",
 };
 
 export function customerAgentName(agent?: string): string {

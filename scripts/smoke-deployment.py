@@ -46,7 +46,13 @@ csrf = result["csrf_token"]
 assert any(cookie.name == "__session" and cookie.secure for cookie in jar)
 assert call("/auth/me")["user"]["role"] == "customer"
 assert call("/overview")["account"]["currency"] == "INR"
-assert len(call("/automations")["catalog"]) == 4
+assert {item["kind"] for item in call("/automations")["catalog"]} == {
+    "financial_health", "security_review", "document_review", "savings_coach",
+    "cashflow_review", "expense_review",
+}
+assert len(call("/knowledge")) == 6
+assert len(call("/analysis")["cashflow"]["projections"]) == 3
+assert call("/documents/guide-neft/content")["document"]["kind"] == "banking_guide"
 call("/analyst/operations", expected=403)
 call("/auth/logout", {}, method="POST")
 call("/auth/me", expected=401)

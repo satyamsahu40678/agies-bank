@@ -14,7 +14,8 @@ as delivered. Current executed results are in [validation](VALIDATION.md).
 | 2 | Multilingual/voice assistant | Hindi and other language UI/audio; display the exact recipient/amount in the confirmation dialog |
 | 2 | Semantic retrieval | Embeddings and Firestore vector retrieval, retaining tenant filters and source validation |
 | 2 | Explainable anomaly feedback | Analyst-labelled outcomes, model evaluation and monitored drift alongside deterministic risk gates |
-| 2 | Richer planning | Recurring-expense planning, what-if cash-flow scenarios and goal simulations without automatic payments |
+| 2 | Richer planning | User-adjustable income/expense scenarios, irregular-income stress tests and comparisons of multiple goal timelines; baseline cash-flow/expense/goal analysis is delivered |
+| 2 | Knowledge maintenance | Reviewed source-change alerts, versioned policy diffs and multilingual primary-source summaries; the initial six attributed guides are delivered |
 | 3 | Regulatory/reporting assistant | Reviewable report drafts from approved records, source links and human sign-off |
 
 ## Scale and release engineering

@@ -17,8 +17,10 @@ const descriptions: Record<string, string> = {
   security_review: "Review account access and unusual activity so you can act with confidence.",
   document_review: "Check your saved documents and find the information you need.",
   savings_coach: "Track your goals and find practical ways to save.",
+  cashflow_review: "Look ahead at estimated balances and see whether your goals fit the same monthly savings capacity.",
+  expense_review: "Spot possible recurring payments and decide what deserves a closer look.",
 };
-const reviewPages: Record<string, string> = { security_review: "/security", document_review: "/documents", savings_coach: "/insights", financial_health: "/insights" };
+const reviewPages: Record<string, string> = { security_review: "/security", document_review: "/documents", savings_coach: "/insights", financial_health: "/insights", cashflow_review: "/analysis", expense_review: "/analysis" };
 const reviewSummary = (status: string) => status === "completed" ? "Your banking specialist has completed this review." : status === "running" ? "Your review is in progress." : status === "failed" ? "This review could not finish. You can try again." : "Your review is saved and will begin shortly.";
 
 export default function AutomationsPage() {

@@ -429,6 +429,8 @@ class Session:
                 "security_review",
                 "document_review",
                 "savings_coach",
+                "cashflow_review",
+                "expense_review",
             }
             or not 1 <= data["interval_hours"] <= 168
         ):

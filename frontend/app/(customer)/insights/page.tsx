@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api, dateTime, money, useResource } from "@/lib/api";
 import { AgentRun, FinancialInsights, SavingsGoal } from "@/lib/agentic";
+import { AskAiButton } from "@/components/ai-help";
 import { customerReviewDecisions } from "@/lib/customer-labels";
 import {
   Button,
@@ -504,10 +505,10 @@ export default function InsightsPage() {
             <p className="eyebrow">TURN INTENTIONS INTO A PLAN</p>
             <h2 id="goals-title">Your savings goals</h2>
           </div>
-          <Button onClick={() => openGoal("new")}>
+          <div className="row"><AskAiButton prompt="Help me create a savings goal. Ask me for its name, target amount in INR and timeframe before drafting it.">Plan with AI</AskAiButton><Button onClick={() => openGoal("new")}>
             <Plus size={15} />
             Create a goal
-          </Button>
+          </Button></div>
         </div>
         <div className="health-planning-note">
           <ShieldCheck size={17} />

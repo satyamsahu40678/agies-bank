@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useResource } from "@/lib/api";
 import { Modal } from "./ui";
+import { AiHelp } from "./ai-help";
 const customerNav = [
   {
     href: "/automations",
@@ -46,6 +47,12 @@ const customerNav = [
     label: "Financial health",
     icon: Sparkles,
     description: "Proactive insights, savings goals and agent runs",
+  },
+  {
+    href: "/analysis",
+    label: "Money analysis",
+    icon: Activity,
+    description: "Cash-flow outlook, recurring expenses and goal feasibility",
   },
   {
     href: "/payments",
@@ -71,6 +78,12 @@ const customerNav = [
     label: "Documents",
     icon: FileText,
     description: "Upload and ask questions about documents",
+  },
+  {
+    href: "/knowledge",
+    label: "Banking guides",
+    icon: BookOpen,
+    description: "RBI, DICGC and NPCI sources explained",
   },
   {
     href: "/security",
@@ -380,6 +393,7 @@ export function AppShell({
           </span>
         </footer>
       </div>
+      {role === "customer" && pathname !== "/assistant" && <AiHelp />}
       {search && (
         <Modal title="Find your workspace" onClose={() => setSearch(false)}>
           <FieldSearch query={query} setQuery={setQuery} />

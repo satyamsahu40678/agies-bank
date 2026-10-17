@@ -74,12 +74,44 @@ Web routes added: `/insights` and `/analyst/integrations`. All mutation endpoint
 | DELETE | `/automations/{id}` | Remove own schedule; retain prior jobs/audit |
 | GET | `/analyst/operations` | Analyst-only ledger reconciliation and job/lease counts |
 
-Kinds: `financial_health`, `security_review`, `document_review`, `savings_coach`.
+Kinds: `financial_health`, `security_review`, `document_review`, `savings_coach`,
+`cashflow_review`, `expense_review`.
 These workflows produce read-only guidance. Pausing does not cancel an already
 queued job. Mutation routes require session CSRF and Origin checks. Unknown
 workflow kinds, invalid intervals and extra fields are rejected. Foreign schedule
 IDs return 404. A bounded optimistic conflict returns a retryable 409 without
 partial writes; clients must retain the transfer idempotency key when retrying.
+
+## Contextual AI, analysis and banking knowledge
+
+- `GET /analysis` → `{cashflow, recurring, goals}` for the current customer.
+  Cash flow includes posted 30-day totals, record count, 30/60/90-day projections,
+  timestamp and assumptions. Recurring analysis uses 120 days and returns possible
+  patterns, typical amounts, cadence and estimated dates. Goal analysis compares
+  all active monthly contributions against one shared recorded surplus.
+- `GET /knowledge` → six release-versioned educational summaries with `id`,
+  `title`, `category`, `publisher`, `source_url`, `summary`, `content`,
+  `reviewed_at`, `jurisdiction`, `notice` and suggested `questions`.
+- `GET /knowledge/{id}` → one guide, or 404. All knowledge/analysis routes require
+  a customer session; analyst access is rejected.
+- `POST /chat` can additionally return `goal_drafts:[{id,name,target_amount,
+  saved_amount,target_date,months,monthly_contribution,monthly_capacity,
+  monthly_shortfall,planning_only,requires_confirmation,message}]`. Drafts are
+  server-validated read-only suggestions, never saved goals.
+- `POST /goals` accepts an optional `Idempotency-Key` header of 16–100 ASCII
+  letters, digits, hyphens or underscores. Same customer/key and unchanged goal
+  fields return the existing goal; conflicting details return 409. Keys are
+  scoped by customer and operation. A normal request without the header retains
+  existing goal-form behavior. CSRF and role checks apply before either path.
+- Guide citations additionally include `source_url`, `publisher`, `reviewed_at`
+  and `source_kind=educational_summary`. Excerpts are exact substrings of the
+  shipped summary, not quotations attributed to the original authority.
+  `/documents/{id}/content` also previews known guide IDs without database writes.
+
+Goal draft cards are not persisted in `/chat` history; only saved message text is
+retained. Re-draft after reload. Analysis and guide retrieval are deterministic;
+model explanations use the existing provider. See [AI workspace](AI_WORKSPACE.md)
+for algorithms, source maintenance and limits.
 `/health` reports the actual storage adapter. Hosted cookies use Secure HttpOnly
 `__session` to pass through Firebase Hosting; session values never appear in logs.
 Document uploads are bounded to 300 extracted chunks per atomic write.
