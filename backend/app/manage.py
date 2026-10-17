@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("migrate")
+    sub.add_parser("verify-schema")
     sub.add_parser("reconcile")
     worker = sub.add_parser("worker")
     worker.add_argument("--max-jobs", type=int, default=50)
@@ -30,6 +31,10 @@ def main():
         from .maintenance import initialize_store
 
         print(initialize_store())
+    elif args.action == "verify-schema":
+        from .maintenance import verify_schema
+
+        print(verify_schema())
     elif args.action == "reconcile":
         from .maintenance import reconcile
 

@@ -1,5 +1,9 @@
 name: Deploy Firestore application
 on:
+  workflow_run:
+    workflows: [Application checks]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
       mode:
@@ -13,28 +17,85 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read
-  id-token: write
 jobs:
+  verified-source:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - id: source
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const repo = context.repo;
+            const latest = (await github.rest.repos.getBranch({...repo, branch: 'main'})).data.commit.sha;
+            const revision = context.eventName === 'workflow_run' ? context.payload.workflow_run.head_sha : context.sha;
+            if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('Invalid source commit');
+            if (revision !== latest) {
+              core.notice('A newer main commit exists; this older deployment is skipped.');
+              return;
+            }
+            const runs = (await github.rest.actions.listWorkflowRuns({
+              ...repo, workflow_id: 'ci.yml', branch: 'main', event: 'push',
+              head_sha: revision, status: 'completed', per_page: 20
+            })).data.workflow_runs;
+            if (!runs.some(run => run.head_sha === revision && run.conclusion === 'success')) {
+              throw new Error('The exact main commit must pass Application checks before deployment');
+            }
+            core.setOutput('revision', revision);
   deploy:
-    if: github.ref == 'refs/heads/main'
-    environment: google-cloud
+    needs: verified-source
+    if: needs.verified-source.outputs.revision != ''
+    environment:
+      name: google-cloud
+      url: https://agies-bank.web.app
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
     env:
       GOOGLE_CLOUD_PROJECT: agies-bank
-      DEPLOY_MODE: ${{ inputs.mode }}
-      DEPLOY_REVISION: ${{ github.sha }}
+      DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
+      DEPLOY_REVISION: ${{ needs.verified-source.outputs.revision }}
+      INITIALIZE_SCHEMA: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verified-source.outputs.revision }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-      - uses: google-github-actions/setup-gcloud@v2
       - name: Install Firebase CLI
         run: npm install --global firebase-tools@15.34.0
-      - name: Preflight, build, migrate, deploy, schedule and verify
-        run: bash scripts/deploy-google.sh
+      - name: Authenticate build and service deployment
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: agies-bank
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/1081578863411/locations/global/workloadIdentityPools/agies-github/providers/github-main' }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT || 'firebase-adminsdk-fbsvc@agies-bank.iam.gserviceaccount.com' }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Build, check schema and deploy services and durable workers
+        run: DEPLOY_PHASE=services bash scripts/deploy-google.sh
+      - name: Refresh identity before Firebase publication
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: agies-bank
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/1081578863411/locations/global/workloadIdentityPools/agies-github/providers/github-main' }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT || 'firebase-adminsdk-fbsvc@agies-bank.iam.gserviceaccount.com' }}
+      - name: Publish Hosting, rules and indexes; verify the public application
+        run: DEPLOY_PHASE=publish bash scripts/deploy-google.sh
+      - name: Record release
+        run: |
+          printf '### Hosted release\n\n- Source: `%s` on `main`\n- URL: https://agies-bank.web.app\n- Checks, read-only schema gate and hosted smoke checks passed.\n' "$DEPLOY_REVISION" >> "$GITHUB_STEP_SUMMARY"

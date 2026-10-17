@@ -8,7 +8,7 @@ import pytest
 from app.db import Session
 from app.query import select, IntegrityError, ConcurrentWrite, DatabaseError
 from app.models import Account, User, AuditLog, LedgerEntry, SavingsGoal
-from app.maintenance import initialize_store, reconcile
+from app.maintenance import initialize_store, reconcile, verify_schema
 
 
 def test_runtime_imports_no_sqlalchemy():
@@ -141,3 +141,28 @@ def test_foreign_key_and_integer_money_guards_preserve_existing_records(db_facto
         account = db.scalar(select(Account).where(Account.user_id == customer.id))
         account.balance_paise = 1.5
         with pytest.raises(IntegrityError): db.commit()
+
+
+def test_ordinary_deployment_schema_check_is_read_only(db_factory):
+    initialize_store(db_factory)
+    with db_factory() as db:
+        marker_before = db.backend.read("_system/schema")
+        accounts_before = db.backend.query("accounts")
+        ledger_before = db.backend.query("ledger_entries")
+    assert verify_schema(db_factory) == {"schema_version": 2, "mode": "read_only"}
+    with db_factory() as db:
+        assert db.backend.read("_system/schema") == marker_before
+        assert db.backend.query("accounts") == accounts_before
+        assert db.backend.query("ledger_entries") == ledger_before
+
+
+@pytest.mark.parametrize("version", [None, 1, 3])
+def test_ordinary_deployment_refuses_absent_or_incompatible_schema(db_factory, version):
+    with db_factory() as db:
+        if version is not None:
+            db.backend.commit({}, {"_system/schema": {"version": version}})
+        before = db.backend.read("_system/schema")
+    with pytest.raises(IntegrityError, match="Stop writers"):
+        verify_schema(db_factory)
+    with db_factory() as db:
+        assert db.backend.read("_system/schema") == before

@@ -18,6 +18,7 @@ from io import BytesIO
 import json
 import math
 import re
+import time
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -536,6 +537,19 @@ def _retrieve_documents(
     return {"answer": answer, "citations": citations}
 
 
+class _OpenRouterUnavailable(HTTPException):
+    """Only availability failures may use the scoped local fallback."""
+
+    def __init__(self):
+        super().__init__(503, "OpenRouter is temporarily unavailable.")
+
+
+_OPENROUTER_TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
+_OPENROUTER_FALLBACK_NOTICE = (
+    "OpenRouter is temporarily unavailable. This answer uses the local banking assistant."
+)
+
+
 def query_documents(
     db: Any, user: Any, question: str, document_id: Any = None
 ) -> dict[str, Any]:
@@ -549,7 +563,12 @@ def query_documents(
     elif mode == "gemini" and result["citations"]:
         result = _gemini_document_answer(db, user, question, result["citations"])
     elif mode == "openrouter" and result["citations"]:
-        result = _openrouter_document_answer(db, user, question, result["citations"])
+        try:
+            result = _openrouter_document_answer(db, user, question, result["citations"])
+        except _OpenRouterUnavailable:
+            mode = "local"
+            result["answer"] = _OPENROUTER_FALLBACK_NOTICE + "\n\n" + result["answer"]
+            result["fallback_from"] = "openrouter"
     audit(
         db,
         user.id,
@@ -1506,12 +1525,17 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
     reply = ""
     plan = _local_plan(message)
     required_tool = plan[0][0] if plan else None
+    deadline = time.monotonic() + 40
     with httpx.Client(timeout=httpx.Timeout(35.0, connect=10.0)) as client:
         for _ in range(5):
             try:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise _OpenRouterUnavailable()
                 response = client.post(
                     f"{OPENROUTER_BASE}/chat/completions",
                     headers=openrouter_headers(key),
+                    timeout=httpx.Timeout(min(35.0, remaining), connect=min(10.0, remaining)),
                     json={
                         "model": model,
                         "messages": messages,
@@ -1526,6 +1550,8 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                         "reasoning": {"effort": "low", "exclude": True},
                     },
                 )
+                if response.status_code in _OPENROUTER_TRANSIENT_STATUS:
+                    raise _OpenRouterUnavailable()
                 if response.status_code != 200:
                     raise HTTPException(
                         503,
@@ -1538,7 +1564,9 @@ def _openrouter_chat(context: ToolContext, message: str) -> dict[str, Any]:
                     raise ValueError("Invalid completion")
             except HTTPException:
                 raise
-            except (httpx.HTTPError, ValueError, TypeError, IndexError, KeyError):
+            except httpx.HTTPError:
+                raise _OpenRouterUnavailable() from None
+            except (ValueError, TypeError, IndexError, KeyError):
                 raise HTTPException(
                     503, "OpenRouter returned an invalid or unavailable response."
                 ) from None
@@ -1784,7 +1812,13 @@ def chat(db: Any, user: Any, message: str) -> dict[str, Any]:
     elif mode == "gemini":
         result = _gemini_chat(context, message)
     elif mode == "openrouter":
-        result = _openrouter_chat(context, message)
+        try:
+            result = _openrouter_chat(context, message)
+        except _OpenRouterUnavailable:
+            mode = "local"
+            result = _local_chat(context, message)
+            result["reply"] = _OPENROUTER_FALLBACK_NOTICE + "\n\n" + result["reply"]
+            result["fallback_from"] = "openrouter"
     else:
         result = _local_chat(context, message)
     result["trace_id"] = trace_id
@@ -2416,6 +2450,8 @@ def _openrouter_document_answer(
                     "max_tokens": 2000,
                 },
             )
+            if response.status_code in _OPENROUTER_TRANSIENT_STATUS:
+                raise _OpenRouterUnavailable()
             if response.status_code != 200:
                 raise HTTPException(503, "OpenRouter could not answer from the supplied document excerpts.")
             body = response.json()
@@ -2437,7 +2473,9 @@ def _openrouter_document_answer(
         return _checked_document_answer(json.loads(content), citations, names)
     except HTTPException:
         raise
-    except (httpx.HTTPError, ValueError, TypeError, KeyError, IndexError):
+    except httpx.HTTPError:
+        raise _OpenRouterUnavailable() from None
+    except (ValueError, TypeError, KeyError, IndexError):
         raise HTTPException(
             503,
             "OpenRouter could not return a valid answer with allowed source citations.",

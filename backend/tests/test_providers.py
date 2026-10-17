@@ -1420,3 +1420,102 @@ def test_openrouter_cannot_answer_account_facts_without_a_fresh_tool_result(
         ai.chat(db, user, "What is my available balance?")
     assert error.value.status_code == 503
     assert "required scoped banking tool" in str(error.value.detail)
+
+@pytest.mark.parametrize("failure", [429, 503, "timeout"])
+def test_openrouter_availability_fallback_uses_scoped_facts_and_preserves_consent(
+    intelligence_db, clean_provider_env, monkeypatch, failure
+):
+    db, user, _, account, public, private = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    before = account.balance_paise
+    ledgers_before = db.scalar(select(func.count()).select_from(LedgerEntry))
+
+    def handle(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("Synthetic timeout", request=request)
+        return httpx.Response(failure, json={"error": {"message": "Untrusted upstream [99]"}})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(ai.httpx, "Client", lambda **kw: client_type(transport=httpx.MockTransport(handle), **kw))
+    balance = ai.chat(db, user, "What is my available balance?")
+    assert balance["ai_mode"] == "local" and balance["fallback_from"] == "openrouter"
+    assert "local banking assistant" in balance["reply"]
+    assert "20000.00" in balance["reply"]
+    assert balance["tools"][0]["name"] == "get_balance"
+    policy = ai.chat(db, user, "What does the loan policy say?")
+    assert policy["citations"] and all(c["document_id"] == public.id for c in policy["citations"])
+    assert "OBSIDIAN" not in policy["reply"]
+    proposal = ai.chat(db, user, "Transfer INR 100 to Demo Landlord")
+    assert proposal["proposal"]["amount"] == "100.00"
+    assert "explicitly submit" in proposal["reply"]
+    assert "[99]" not in proposal["reply"]
+    assert account.balance_paise == before
+    assert db.scalar(select(func.count()).select_from(Transfer)) == 0
+    assert db.scalar(select(func.count()).select_from(LedgerEntry)) == ledgers_before
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_openrouter_document_availability_fallback_keeps_exact_tenant_sources(
+    intelligence_db, clean_provider_env, monkeypatch, status
+):
+    db, user, _, _, public, private = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(status, json={"error": {"message": "Unavailable"}})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(ai.httpx, "Client", lambda **kw: client_type(transport=httpx.MockTransport(handle), **kw))
+    result = ai.query_documents(db, user, "What is the loan rate?")
+    assert result["ai_mode"] == "local" and result["fallback_from"] == "openrouter"
+    assert "local banking assistant" in result["answer"] and "10.75%" in result["answer"]
+    assert all(c["document_id"] == public.id and c["page"] == 2 for c in result["citations"])
+    with pytest.raises(HTTPException) as error:
+        ai.query_documents(db, user, "OBSIDIAN", private.id)
+    assert error.value.status_code == 404
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("status", [400, 401])
+def test_openrouter_configuration_errors_are_not_masked_by_availability_fallback(
+    intelligence_db, clean_provider_env, monkeypatch, status
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    client_type = httpx.Client
+    monkeypatch.setattr(ai.httpx, "Client", lambda **kw: client_type(
+        transport=httpx.MockTransport(lambda request: httpx.Response(status, json={"error": {"message": "Rejected"}})), **kw
+    ))
+    for invoke in (ai.chat, ai.query_documents):
+        with pytest.raises(HTTPException) as error:
+            invoke(db, user, "What is the loan policy?")
+        assert error.value.status_code == 503
+
+
+def test_openrouter_tool_loop_time_budget_keeps_fallback_inside_hosted_gateway(
+    intelligence_db, clean_provider_env, monkeypatch
+):
+    db, user, *_ = intelligence_db
+    monkeypatch.setenv("AEGIS_AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    ticks = iter([0.0, 0.0, 41.0])
+    monkeypatch.setattr(ai, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "tool_calls": [{
+            "id": "call_balance", "type": "function", "function": {"name": "get_balance", "arguments": "{}"}
+        }]}}]})
+
+    client_type = httpx.Client
+    monkeypatch.setattr(ai.httpx, "Client", lambda **kw: client_type(transport=httpx.MockTransport(handle), **kw))
+    result = ai.chat(db, user, "What is my available balance?")
+    assert len(calls) == 1
+    assert result["ai_mode"] == "local" and result["fallback_from"] == "openrouter"
+    assert "20000.00" in result["reply"]

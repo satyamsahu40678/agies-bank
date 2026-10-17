@@ -7,6 +7,17 @@ from .models import Account, LedgerEntry
 from .query import IntegrityError, Record, select
 
 
+def verify_schema(factory=SessionLocal):
+    """Gate an ordinary rollout without running offline maintenance on writers."""
+    with factory() as db:
+        marker = db.backend.read("_system/schema")[0]
+        if not marker or marker.get("version") != SCHEMA_VERSION:
+            raise IntegrityError(
+                "Firestore schema is incompatible. Stop writers and initialize the schema offline before deploying."
+            )
+    return {"schema_version": SCHEMA_VERSION, "mode": "read_only"}
+
+
 def reconcile(db):
     totals = defaultdict(int)
     invalid = []
